@@ -195,6 +195,13 @@ src-tauri/target/release/bundle/nsis/
 src-tauri/target/release/soul-lantern.exe
 ```
 
+## 键盘
+
+| 键 | 作用 |
+|---|---|
+| `F11` | 全屏 / 退出全屏 |
+| `Ctrl+Enter` | AI 模式里直接发起生成 |
+
 ## 注意事项
 
 Minecraft 指令组件语法会随版本变化。

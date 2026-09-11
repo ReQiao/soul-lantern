@@ -14,6 +14,7 @@ import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
 import { installLiquidGlass } from "./logic/glass";
+import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
 // 换图之后不会因为浏览器缓存显示旧的。
@@ -337,6 +338,8 @@ onMounted(() => {
   // 灯的图片路径是 Vite 打过哈希的，CSS 写不出来，运行时注入给 .shell-frost 用。
   document.documentElement.style.setProperty("--bg-lantern", `url(${lanternUrl})`);
   uninstallGlass = installLiquidGlass();
+  // F11 全屏。挂在 capture 阶段，光标在输入框/富文本里也能按（见 logic/fullscreen.ts）。
+  uninstallFullscreen = installFullscreen();
   // 开场：先只有背景，界面再一块块落位。节奏和"为什么用 WAAPI"见 logic/intro.ts。
   // 须知门禁还没过的时候不放——那时 shell 根本没挂载，等用户点完同意再说。
   void nextTick(() => {
@@ -345,7 +348,11 @@ onMounted(() => {
 });
 
 let uninstallGlass: (() => void) | undefined;
-onBeforeUnmount(() => uninstallGlass?.());
+let uninstallFullscreen: (() => void) | undefined;
+onBeforeUnmount(() => {
+  uninstallGlass?.();
+  uninstallFullscreen?.();
+});
 
 function loadAutosave(): GiveForm {
   const saved = localStorage.getItem(autosaveKey);

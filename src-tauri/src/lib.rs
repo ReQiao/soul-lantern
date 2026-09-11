@@ -6,6 +6,7 @@ pub mod billing;
 mod datapack;
 pub mod remote;
 pub mod session;
+pub mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -35,6 +36,8 @@ pub fn run() {
             datapack::datapack_deploy,
             datapack::datapack_default_saves_dir,
             datapack::datapack_detect_version,
+            window::window_toggle_fullscreen,
+            window::window_is_fullscreen,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
