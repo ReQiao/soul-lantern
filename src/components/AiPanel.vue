@@ -252,15 +252,22 @@ onMounted(() => {
  * 大模型调用现在统一转发到自建服务器（key 只在服务器上，见
  * src-tauri/src/remote.rs 顶部注释），但模型选哪个仍然交给用户——价格/
  * 上下文/靠谱程度差很多：Plus 最稳，Long 性价比最高，Flash 最便宜，
- * Max/DeepSeek 贵但能力更强。留空/选不到就用服务器 .env 里 AI_MODEL 的默认值。
+ * Max 贵但能力更强，DeepSeek 是 Flash 档，便宜但不算强。留空/选不到就用
+ * 服务器 .env 里 AI_MODEL 的默认值。
  *
  * 【价格】以前这里写着 Flash「注意 32k 阶梯跳价」——那是旧版通义的计费方式，
  * qwen3.8-flash 已经取消阶梯，全程 0.8/2.7 每百万 token，所以这句提示删掉了。
  * 真正的价目表在服务端 policy.json，客户端不缓存也不参与计算，这里的括号
  * 说明纯粹是给用户看的定性描述，改价不用跟着动。
  *
- * 【模型 ID】服务端 policy.rs 里 qwen3.8-flash 和 qwen3.7-flash 两个键都注册着
- * 同一份价格，所以这里从 3.7 换到 3.8 不需要同步换二进制。
+ * 【模型 ID】价目表现在只保留控制台上实际在架的型号，服务端 policy.rs
+ * 删掉了别名键（qwen-plus/qwen-long/qwen3.7-flash 已经不再单独注册），
+ * 所以下面这几个 value 必须和 policy.rs 里的键名逐字一致——填错/填一个
+ * 已下架的名字不会报错，只会静默落到 default_model_price 按错的价格扣钱。
+ *
+ * 【deepseek-v4-pro 已下架】换成了 deepseek-v4-flash-0731。这不是改名，
+ * 是型号本身被替换了。新型号是峰谷定价（百炼公告 2026-08-17 起），服务端
+ * 按忙时价（更贵的那档）算，价格已经在 policy.json 里备好了（3/9，缓存 0.3）。
  *
  * 【glm-5.3】它不是通义的模型。服务端目前是单 endpoint 单 key（ai_proxy.rs
  * 的 AI_ENDPOINT/AI_API_KEY），所以这一项只有在服务器的 AI_ENDPOINT 确实
@@ -273,7 +280,7 @@ const MODEL_OPTIONS = [
   { label: "Qwen Max（旗舰，贵）", value: "qwen3.8-max" },
   { label: "Qwen Flash（最便宜）", value: "qwen3.8-flash" },
   { label: "Qwen Long（长上下文，性价比高）", value: "qwen-long-latest" },
-  { label: "DeepSeek V4 Pro（贵，能力强）", value: "deepseek-v4-pro" },
+  { label: "DeepSeek V4 Flash（便宜）", value: "deepseek-v4-flash-0731" },
   { label: "GLM-5.3（需服务端支持）", value: "glm-5.3" },
 ] as const;
 const apiModel = ref<string>("");
@@ -536,7 +543,7 @@ function copyAll() {
       <div class="ai-model-row">
         <span class="field-label">
           模型
-          <InfoTip text="不同模型价格/能力差很多：Plus 最稳，Long 性价比最高，Flash 最便宜，Max/DeepSeek 贵但能力更强。GLM-5.3 需要服务端接了对应网关才能用。拿不准就选「服务器默认」。" />
+          <InfoTip text="不同模型价格/能力差很多：Plus 最稳，Long 性价比最高，Flash 和 DeepSeek 最便宜，Max 贵但能力更强。GLM-5.3 需要服务端接了对应网关才能用。拿不准就选「服务器默认」。" />
         </span>
         <CustomSelect
           v-model="apiModel"
