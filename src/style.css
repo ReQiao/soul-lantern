@@ -3190,6 +3190,13 @@ button#primary,
 .tpl-grid { max-height: 40vh; }
 .tpl-plaza-btn { align-self: flex-start; }
 
+/* 同 .auth-inner 那条注释：.picker-card 整块 overflow:hidden 是给动画变形
+   裁边角用的，内置模板+收藏两个网格各自 40vh 封顶之后仍可能比 80vh 高，
+   这时候得让 .tpl-inner 自己滚动，不然多出来的部分会被裁掉够不着。 */
+.tpl-inner {
+  overflow-y: auto;
+}
+
 /* ================================================================
  * 液态玻璃：向 WWDC26 那一版靠拢的四件事
  *

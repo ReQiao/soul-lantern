@@ -17,6 +17,7 @@ import NoticeModal from "./components/NoticeModal.vue";
 import PlazaModal from "./components/PlazaModal.vue";
 import AdminPanel from "./components/AdminPanel.vue";
 import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
+import { useMorphPopup } from "./logic/morphPopup";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
@@ -192,6 +193,11 @@ async function useFavoriteTemplate(id: string, title: string) {
 }
 const itemPickerOpen = ref(false);
 const pickBtnEl = ref<HTMLButtonElement | null>(null);
+const templateBtnEl = ref<HTMLButtonElement | null>(null);
+const { onEnter: onTplEnter, onLeave: onTplLeave } = useMorphPopup({
+  getOrigin: () => templateBtnEl.value,
+  getAnimate: () => animationEnabled.value,
+});
 /** 手动填表 / AI 自然语言 / 管理页，共用顶部的版本选择。 */
 type Mode = "manual" | "ai" | "admin";
 const mode = ref<Mode>("manual");
@@ -1041,7 +1047,7 @@ function textOptions(items: string[]): SelectOption[] {
         <div class="top-form" :class="{ 'stack-hidden': mode !== 'manual' }" :inert="mode !== 'manual'">
           <span class="field-label">模板名<InfoTip text="保存模板时使用这个名称作为 JSON 文件名。" /></span>
           <input v-model="form.templateName" class="template-input" />
-          <button type="button" @click="templateModalOpen = true">模板库</button>
+          <button ref="templateBtnEl" type="button" @click="templateModalOpen = true">模板库</button>
           <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
           <button type="button" @click="saveTemplate">保存模板</button>
           <button type="button" @click="loadTemplate">读取模板</button>
@@ -1390,9 +1396,14 @@ function textOptions(items: string[]): SelectOption[] {
     原来这里是个下拉框，装不下"收藏项还要能看作者、能取消收藏"这些东西。
   -->
   <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="templateModalOpen" class="modal-overlay" @click.self="templateModalOpen = false">
-        <div class="modal-card tpl-card">
+    <Transition :css="false" @enter="onTplEnter" @leave="onTplLeave">
+      <div v-if="templateModalOpen" class="modal-overlay picker-overlay" @click.self="templateModalOpen = false">
+        <div class="picker-scrim"></div>
+        <div class="modal-card picker-card tpl-card">
+          <div class="picker-brand" aria-hidden="true">
+            <span class="picker-brand-label"></span>
+          </div>
+          <div class="picker-inner tpl-inner">
           <div class="plaza-head">
             <h2>模板库</h2>
             <button class="picker-close" type="button" aria-label="关闭" @click="templateModalOpen = false">×</button>
@@ -1447,6 +1458,7 @@ function textOptions(items: string[]): SelectOption[] {
           >
             🏮 去万灯集逛逛
           </button>
+          </div>
         </div>
       </div>
     </Transition>
