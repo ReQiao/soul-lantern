@@ -122,8 +122,9 @@ pub async fn auth_upgrade_notice() -> Result<Option<String>, ()> {
 
 /// 语义化版本比较，只比数字段。
 ///
-/// 不引 semver crate：这里的版本号形态由 give-builder/build_release.py 完全控制，
-/// 永远是 `x.y.0` 三段纯数字，没有预发布标签、没有 build metadata，
+/// 不引 semver crate：这里的版本号形态由发布脚本完全控制（那是作者本机的
+/// 工具，不在这个仓库里），永远是 `x.y.0` 三段纯数字，没有预发布标签、
+/// 没有 build metadata，
 /// 为这点需求拉一个依赖不划算。段数不一样时缺的位当 0（`4.2` < `4.2.1`）。
 fn version_older_than(current: &str, minimum: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {

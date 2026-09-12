@@ -1,8 +1,9 @@
 name: give-buildall-other
 
 # 构建 windows-x64 以外的全部平台/架构（x64 由本地脚本编译）。
-# artifact 名称严格对应 give-builder/build_release.py 的 REMOTE 约定：
+# artifact 名称是收产物那一侧的约定，改名会让下载脚本对不上：
 #   macos-x64 / macos-silicon / windows-x86 / windows-ARM64 / linux-x64 / linux-ARM64
+# （收产物的发布脚本是作者本机的工具，不在这个仓库里。）
 
 on:
   workflow_dispatch:
