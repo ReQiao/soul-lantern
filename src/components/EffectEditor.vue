@@ -158,6 +158,7 @@ function textOptions(items: string[]): SelectOption[] {
         <tr
           v-for="(group, index) in model"
           :key="index"
+          class="row-select"
           :class="{ selected: selectedGroup === index }"
           @click="selectedGroup = index"
         >

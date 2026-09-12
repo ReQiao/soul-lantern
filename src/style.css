@@ -1171,6 +1171,26 @@ button#primary,
   background: rgba(122, 162, 255, 0.22);
 }
 
+/*
+ * 能点的行才配手型指针和按下反馈——`.data-table` 也用来展示不能点的
+ * 只读列表（EffectEditor 里那张"选中效果组内容"就是纯展示，靠旁边的
+ * 按钮删行），给那些行也画上手型指针会显得"这行能点"，点了却什么都不发生。
+ * `.row-select` 只挂在真的绑了 @click 选中这一行的 `<tr>` 上。
+ *
+ * `transform` 加在 `<tr>` 上：虽然 CSS 规范里 table-row 是否吃 transform
+ * 早年有过分歧，但 Chromium（这个项目主要目标的 WebView2/桌面浏览器）早就
+ * 支持了，且它是纯绘制层的偏移，不会影响表格布局——即便某个引擎不支持，
+ * 效果只是"没有这一下按压反馈"，不会露出任何布局错误。
+ */
+.data-table tbody tr.row-select {
+  cursor: pointer;
+  transition: background 180ms ease, transform 90ms ease-out;
+}
+
+.data-table tbody tr.row-select:active {
+  transform: scale(0.99);
+}
+
 .effect-group-table {
   min-height: 150px;
 }
@@ -1901,6 +1921,42 @@ button#primary,
 
 .ai-top-form .custom-select {
   width: clamp(180px, 20vw, 240px);
+}
+
+/*
+ * 模式切换过渡。
+ *
+ * 手动 / AI / 万灯集 / 管理四个面板之前切过去是硬切——没有任何过渡，AI 模式
+ * 除外（它有一整套"点灯"入场特效，见下面 .ai-card.igniting）。其余三个只是
+ * 单纯"内容消失、内容出现"，显得很生硬。
+ *
+ * 【不用 Vue 的 <Transition>】手动模式那块内容早就明确弃用过它——哪怕只给
+ * enter 定义 CSS、leave 什么都不写，<Transition> 组件本身也会用两次
+ * requestAnimationFrame 做双缓冲切 class，这个 JS 层面的开销在低性能设备上
+ * 会被放大成好几帧的延迟（见 App.vue 里那段实测注释）。这里改用纯 CSS
+ * animation：v-show 从 display:none 切回来、v-if 挂载新节点，都会让浏览器
+ * 把动画当"第一次播放"重新跑一遍，不需要一行 JS。
+ *
+ * 幅度和时长跟 AI 模式"点灯"那组用的 ai-content-rise 是同一种手感
+ * （见 ai-content-rise），只是没有逐项错峰、也没有炉火特效——那是 AI 模式
+ * 专属的品牌细节，其余模式没必要跟着有。
+ */
+@keyframes mode-content-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.split-layout,
+.preview-card,
+.admin-card,
+.plaza-card {
+  animation: mode-content-rise 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 /* ---------------- AI 模式面板 ---------------- */

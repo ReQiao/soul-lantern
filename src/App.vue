@@ -1208,6 +1208,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.enchantments"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedEnchantRow === index, flash: rowFlash[`enchant-${index}`] }"
                     @click="selectedEnchantRow = index"
                   >
@@ -1239,6 +1240,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.attributes"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedAttrRow === index, flash: rowFlash[`attr-${index}`] }"
                     @click="selectedAttrRow = index"
                   >
@@ -1269,6 +1271,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.blockLimits"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedBlockRow === index, flash: rowFlash[`block-${index}`] }"
                     @click="selectedBlockRow = index"
                   >
@@ -1352,7 +1355,8 @@ function textOptions(items: string[]): SelectOption[] {
                     <tr
                       v-for="(row, index) in form.toolRules"
                       :key="index"
-                      :class="{ selected: selectedToolRow === index, flash: rowFlash[`tool-${index}`] }"
+                      class="row-select"
+                    :class="{ selected: selectedToolRow === index, flash: rowFlash[`tool-${index}`] }"
                       @click="selectedToolRow = index"
                     >
                       <td>{{ displayBlocks(row.blocks) }}</td>
