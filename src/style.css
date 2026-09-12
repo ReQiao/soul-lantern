@@ -202,7 +202,23 @@ button {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  background: linear-gradient(160deg, rgba(10, 22, 48, 0.36), rgba(5, 13, 32, 0.47));
+  /*
+   * 【这是"玻璃透明度"滑杆真正该改的地方】它之前是写死的两个 rgba，
+   * 跟 --glass-tint-alpha（那根滑杆驱动的变量）完全没关系——滑杆拖到哪
+   * 这块背景都纹丝不动。而这块 .app-shell 才是用户**几乎全程看得见**的
+   * 那片玻璃，弹窗只在临时打开的那几秒存在。所以滑杆"感觉调了没反应"，
+   * 是因为它确实只影响了用户大部分时间根本没打开的东西。
+   *
+   * 两个系数（0.36/0.47 换算成对 --glass-tint-alpha 的比例）是照着这两个
+   * 原始硬编码值反推的：clarity 默认 0.55 时 --glass-tint-alpha ≈ 0.353，
+   * 代入下面这两个系数应该分别还原出 0.36 和 0.47——默认外观不变，
+   * 只是现在真的接上了开关。
+   */
+  background: linear-gradient(
+    160deg,
+    rgba(10, 22, 48, calc(var(--glass-tint-alpha) * 1.02)),
+    rgba(5, 13, 32, calc(var(--glass-tint-alpha) * 1.33))
+  );
   box-shadow:
     0 32px 80px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
@@ -243,7 +259,12 @@ button {
   background-repeat: no-repeat;
   background-position: center, center, center;
   background-size: min(30vw, 30vh) auto, min(150vw, 150vh) min(150vw, 150vh), cover;
-  filter: blur(26px) saturate(150%) brightness(1.02);
+  /*
+   * 模糊半径也跟 clarity 走一点点（26px 基准，clarity 每往清透端多 0.1 就
+   * 少糊 1px，幅度控制得很轻）——这是**静态**滤镜，只在内容或这条声明本身
+   * 变化时重算一次，不是每帧重算，改这个不会把前面测过的那份帧率数据作废。
+   */
+  filter: blur(calc(26px - 6px * var(--clarity))) saturate(150%) brightness(1.02);
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1519,7 +1540,13 @@ button#primary,
  */
 .picker-grid button {
   display: flex;
-  min-height: 46px;
+  /* 【调小过字号 + 换算过这个高度】原来用 pt 做单位（10.5pt/8.5pt ≈ 14/11.3px），
+     行高又没有显式钉死，靠各引擎的默认行高兜底——Chromium 和 Windows 上
+     WebView2 的默认行高不完全一样，够不着最坏情况就会出现"最上面/最下面
+     那一丝被裁掉"。现在两行字体都换成 px（不同引擎对 px 的换算没有歧义）、
+     显式给了 line-height，min-height 也按"两行字体 + gap + 上下 padding"
+     精确加总再留一点余量算出来，不是拍的。 */
+  min-height: 50px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.02));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
@@ -1527,15 +1554,16 @@ button#primary,
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 3px;
+  padding: 9px 10px;
   text-align: left;
 }
 
 .picker-grid button .picker-name {
   overflow: hidden;
   width: 100%;
-  font-size: 10.5pt;
+  font-size: 12px;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1544,7 +1572,8 @@ button#primary,
   overflow: hidden;
   width: 100%;
   color: rgba(174, 183, 218, 0.66);
-  font-size: 8.5pt;
+  font-size: 10px;
+  line-height: 1.3;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3302,4 +3331,75 @@ button#primary,
   width: 100%;
   accent-color: #ffc45c;
   cursor: pointer;
+}
+
+
+/* ================================================================
+ * 共享的"从按钮里飞出来"弹窗动画的样式。
+ *
+ * 【为什么在全局，不在某个组件的 <style scoped> 里】这套 class
+ * （.picker-scrim/.picker-card/.picker-brand/.picker-brand-label/.picker-inner）
+ * 最早长在 ItemPickerModal 里，但它描述的是"弹窗怎么从按钮变出来"这件通用
+ * 的事，不是"选择物品"这个功能专属的。Vue 的 <style scoped> 会给规则加一个
+ * data-v-xxx 属性选择器，只在**那一个组件**渲染出的 DOM 里生效——如果留在
+ * 原处，AuthModal/模板库弹窗这些想复用同一套动画的组件，就算写出一模一样的
+ * class 名也套不上这份样式，样式和动画就分家了。所以搬到这里，配合
+ * src/logic/morphPopup.ts 的 useMorphPopup()，谁都能接。
+ * ================================================================ */
+
+/* 弹窗展开/收回时框体本身由 onEnter/onLeave 里的 element.animate() 直接接管
+   left/top/width/height/border-radius，这里只需要让内容能在框体变形的过程中
+   独立淡入淡出（picker-inner），并且外层不会在收缩阶段把网格内容露出来。 */
+/* 遮罩从 .modal-overlay 上剥出来，单独一层。
+   过渡元素本身不能再带底色和模糊——它是弹窗的父节点，动它的 opacity 会把
+   弹窗一起按住（见 onEnter 里那段注释）。 */
+.picker-overlay {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.picker-scrim {
+  position: absolute;
+  background: rgba(3, 8, 22, 0.42);
+  opacity: 0;
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  inset: 0;
+  /* 点空白处关闭靠父元素的 @click.self，遮罩不能把点击吃掉 */
+  pointer-events: none;
+}
+
+.picker-card {
+  /* 品牌色覆盖层按这块卡片定位；变形时这里会被改成 fixed，同样是包含块。 */
+  position: relative;
+  overflow: hidden;
+}
+
+/* 品牌色覆盖层：铺满整块弹窗，展开的第一段里它就是"那颗按钮"的脸。
+   inset:0 + border-radius:inherit 让它天然跟着弹窗一起变形，不用另外追位置。
+   平时 opacity:0 且 pointer-events:none，不参与任何交互。 */
+.picker-brand {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  opacity: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+.picker-brand-label {
+  white-space: nowrap;
+}
+
+.picker-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }

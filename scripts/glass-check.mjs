@@ -60,6 +60,16 @@ if (await agree.count()) {
 }
 await sleep(1200);
 
+// 【必须在任何滑杆操作之前测】app-shell 的真实默认底色，免得被后面的拖拽测试污染
+const shellDefault0 = await page.evaluate(
+  () => getComputedStyle(document.querySelector(".app-shell")).backgroundImage,
+);
+console.log("app-shell 真实默认底色（未动过滑杆）:", shellDefault0);
+console.log(
+  "  与改造前一致（0.36/0.47）:",
+  shellDefault0.includes("0.36") && shellDefault0.includes("0.47") ? "是" : "否 ← 外观被改动了",
+);
+
 console.log("--- 主界面 ---");
 console.log("模式切换按钮:", await page.locator(".mode-switch button").allTextContents());
 console.log("撤销/重做/重置:", await page.locator(".top-form button").allTextContents());
@@ -121,6 +131,28 @@ const clarityEffect = await page.evaluate(async () => {
   };
 });
 console.log("拖 clarity 到 0:", clarityEffect);
+
+// .app-shell 才是用户几乎全程看得见的那片玻璃，之前滑杆完全碰不到它
+const shellDefault = shellDefault0;
+
+const shellAtZero = await page.evaluate(async () => {
+  const slider = document.querySelector(".clarity-slider");
+  slider.value = "0";
+  slider.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 200));
+  return getComputedStyle(document.querySelector(".app-shell")).backgroundImage;
+});
+console.log("拖到 0 之后 app-shell 底色:", shellAtZero);
+console.log("  真的变了:", shellAtZero !== shellDefault ? "是" : "否 ← 滑杆还是没接上主界面");
+
+const shellAtOne = await page.evaluate(async () => {
+  const slider = document.querySelector(".clarity-slider");
+  slider.value = "1";
+  slider.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 200));
+  return getComputedStyle(document.querySelector(".app-shell")).backgroundImage;
+});
+console.log("拖到 1 之后 app-shell 底色:", shellAtOne);
 
 // 换一个小得多的浮层，验证"厚度随尺寸变"确实产生了不同的值
 await page.keyboard.press("Escape");
