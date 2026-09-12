@@ -25,7 +25,6 @@ import {
   recheckAuth,
 } from "../logic/auth";
 import CustomSelect from "./CustomSelect.vue";
-import PlazaModal from "./PlazaModal.vue";
 import DeployPanel from "./DeployPanel.vue";
 import InfoTip from "./InfoTip.vue";
 
@@ -287,20 +286,18 @@ const MODEL_OPTIONS = [
 ] as const;
 const apiModel = ref<string>("");
 
-/**
- * 万灯集（AI 模板那一侧）。
- *
- * 和手动模式共用同一个组件，只是 `kind` 传 "ai"：那边的 payload 是表单 JSON，
- * 这边是一段提示词。发布时打包的就是输入框里现在这段文字。
- */
-const plazaOpen = ref(false);
+const userText = ref("");
 
+/**
+ * 万灯集"AI 模板"那一侧点了"用这个"之后，App.vue 通过模板 ref 调这个函数
+ * 把内容塞进输入框——万灯集现在是和这个面板并列的独立模式，不再是从这个
+ * 面板里弹出来的小窗口，所以这边不再自己挂一份 PlazaPanel 实例，只留一个
+ * 供外部调用的入口（见文件末尾的 defineExpose）。
+ */
 function usePrompt(payload: string, title: string) {
   userText.value = payload;
   emit("toast", `已载入「${title}」，可以直接生成，也可以改改再生成`);
 }
-
-const userText = ref("");
 const busy = ref(false);
 const errorText = ref("");
 const explanation = ref("");
@@ -437,6 +434,8 @@ async function copyText(text: string, label: string) {
 function copyAll() {
   void copyText(commands.value.join("\n"), `全部 ${commands.value.length} 条指令`);
 }
+
+defineExpose({ userText, usePrompt });
 </script>
 
 <template>
@@ -606,7 +605,6 @@ function copyAll() {
         {{ busy ? "生成中…" : "AI 生成指令" }}
       </button>
       <button type="button" :disabled="commands.length === 0" @click="copyAll">复制全部</button>
-      <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
     </div>
 
     <p v-if="errorText" class="ai-error">{{ errorText }}</p>
@@ -650,15 +648,5 @@ function copyAll() {
       @update:version="(v) => emit('update:version', v)"
     />
     </template>
-
-    <!-- 万灯集：AI 模板那一侧。currentPayload 传输入框里现在这段提示词，
-         用户点"发布我的"时打包的就是它。 -->
-    <PlazaModal
-      v-model:open="plazaOpen"
-      kind="ai"
-      :current-payload="userText"
-      @use="usePrompt"
-      @toast="(m) => emit('toast', m)"
-    />
   </section>
 </template>

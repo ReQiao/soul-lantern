@@ -2733,13 +2733,11 @@ button#primary,
 
 /* ---------------------------------------------------------------- 万灯集
  *
- * 弹窗本体沿用 .modal-card（同一套玻璃/圆角/折射），这里只加内部布局。
- * 尺寸比普通弹窗大得多——它是个"逛"的界面，不是个确认框。
+ * 和「手动模式」「AI 模式」「管理」并列的第四个模式页，不再是浮在最上面的
+ * 弹窗——跟 .admin-card 一样，就是主界面里的一块 .card，宽度、滚动都交给
+ * 外层布局，不再自己钉 width/max-height。
  */
 .plaza-card {
-  width: min(920px, 94vw);
-  max-width: none;
-  max-height: 86vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2761,11 +2759,6 @@ button#primary,
 .plaza-lantern {
   /* 灯笼是这个功能的标志物，给它一点暖光，和背景那盏呼应 */
   filter: drop-shadow(0 0 10px rgba(255, 176, 76, 0.55));
-}
-.plaza-kind {
-  font-size: 13px;
-  font-weight: 400;
-  opacity: 0.6;
 }
 
 .plaza-filters {
@@ -2836,16 +2829,6 @@ button#primary,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.plaza-item-excerpt {
-  font-size: 12px;
-  opacity: 0.6;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 .plaza-item-meta {
   display: flex;

@@ -190,9 +190,10 @@ async function fps(label) {
 
 console.log("\n--- 帧率（sandbox 是软件渲染，只看相对差）---");
 await fps("静止");
-await page.locator(".top-form button", { hasText: "万灯集" }).click();
+// 万灯集现在是模式切换栏里的一个模式，不是弹窗——按钮挪到了 .mode-switch。
+await page.locator(".mode-switch button", { hasText: "万灯集" }).click();
 await sleep(900);
-await fps("万灯集弹窗开着");
+await fps("万灯集页面打开");
 
 console.log("\n--- 控制台错误 ---");
 console.log(errors.length ? errors.slice(0, 10) : "（无）");

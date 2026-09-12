@@ -14,7 +14,7 @@ import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
-import PlazaModal from "./components/PlazaModal.vue";
+import PlazaPanel from "./components/PlazaPanel.vue";
 import AdminPanel from "./components/AdminPanel.vue";
 import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
 import { useMorphPopup } from "./logic/morphPopup";
@@ -141,8 +141,6 @@ const fileInput = ref<HTMLInputElement | null>(null);
  * 而且收藏项还要能取消收藏、能看是谁做的。一个 `<select>` 塞不下这些。
  */
 const templateModalOpen = ref(false);
-/** 万灯集弹窗。手动模式和 AI 模式各自打开它，靠 kind 区分。 */
-const plazaOpen = ref(false);
 
 /**
  * 模板库里"我收藏的"那一栏。
@@ -198,9 +196,18 @@ const { onEnter: onTplEnter, onLeave: onTplLeave } = useMorphPopup({
   getOrigin: () => templateBtnEl.value,
   getAnimate: () => animationEnabled.value,
 });
-/** 手动填表 / AI 自然语言 / 管理页，共用顶部的版本选择。 */
-type Mode = "manual" | "ai" | "admin";
+/** 手动填表 / AI 自然语言 / 万灯集 / 管理页，共用顶部的版本选择。 */
+type Mode = "manual" | "ai" | "plaza" | "admin";
 const mode = ref<Mode>("manual");
+
+/**
+ * 万灯集刚打开时该看手动模板还是 AI 模板：跟着"进万灯集之前最后待的是哪个
+ * 内容模式"走，纯图方便——页面里随时能用它自己的切换器换到另一侧。
+ */
+const lastContentMode = ref<"manual" | "ai">("manual");
+watch(mode, (m) => {
+  if (m === "manual" || m === "ai") lastContentMode.value = m;
+});
 
 /**
  * 管理页的入口只在**当前会话已经解锁过管理权限**时出现。
@@ -785,6 +792,22 @@ function useManualTemplate(payload: string, title: string) {
   }
 }
 
+/** AiPanel 里 userText/usePrompt 的类型都靠 defineExpose 推出来，模板 ref
+ *  拿到的就是这个形状——不用另外手写一份接口来描述"暴露了什么"。 */
+const aiPanelRef = ref<InstanceType<typeof AiPanel> | null>(null);
+
+/** 万灯集"手动模板"那一侧点了"用这个"：载入表单，顺手切回手动模式看效果。 */
+function useManualFromPlaza(payload: string, title: string) {
+  useManualTemplate(payload, title);
+  mode.value = "manual";
+}
+
+/** 万灯集"AI 模板"那一侧点了"用这个"：塞进 AI 输入框，切回 AI 模式。 */
+function useAiFromPlaza(payload: string, title: string) {
+  aiPanelRef.value?.usePrompt(payload, title);
+  mode.value = "ai";
+}
+
 function showMessage(title: string, message: string, error = false) {
   modal.title = title;
   modal.message = message;
@@ -1014,6 +1037,13 @@ function textOptions(items: string[]): SelectOption[] {
             :class="{ active: mode === 'ai' }"
             @click="selectMode('ai', $event)"
           >AI 模式</button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'plaza'"
+            :class="{ active: mode === 'plaza' }"
+            @click="selectMode('plaza')"
+          >🏮 万灯集</button>
           <!-- 只有解锁过管理权限的会话才看得到这个 tab。退出登录/重新登录之后
                它会自己消失，因为 adminVerified 是跟着服务端会话走的。 -->
           <button
@@ -1048,7 +1078,6 @@ function textOptions(items: string[]): SelectOption[] {
           <span class="field-label">模板名<InfoTip text="保存模板时使用这个名称作为 JSON 文件名。" /></span>
           <input v-model="form.templateName" class="template-input" />
           <button ref="templateBtnEl" type="button" @click="templateModalOpen = true">模板库</button>
-          <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
           <button type="button" @click="saveTemplate">保存模板</button>
           <button type="button" @click="loadTemplate">读取模板</button>
           <button type="button" :disabled="!canUndo" title="Ctrl+Z" @click="undo">撤销</button>
@@ -1065,12 +1094,28 @@ function textOptions(items: string[]): SelectOption[] {
          :active 单独传 mode==='ai'，给 AiPanel 用来判断"这次是不是刚切进来"，
          好在每次切入时重放点灯特效——面板本身常驻挂载，不能再靠组件创建时机触发动画了。 -->
     <AiPanel
+      ref="aiPanelRef"
       v-show="mode === 'ai'"
       :active="mode === 'ai'"
       :version="form.version"
       :animate="animationEnabled"
       @toast="showToast"
       @update:version="form.version = $event"
+    />
+
+    <!-- 万灯集。用 v-if 而不是 v-show：每次进来都要重新拉一遍列表（收藏/点赞/
+         发布随时在变，缓存住只会让人对着旧数字逛），不像手动/AI 面板那样
+         需要在切走的时候保住一份正在编辑的状态。
+         manualPayload/aiPayload 两份都传：具体发布哪一份由页面里的 kind
+         切换决定，这边不该替用户决定"发布的时候到底是哪一份"。 -->
+    <PlazaPanel
+      v-if="mode === 'plaza'"
+      :manual-payload="JSON.stringify(form)"
+      :ai-payload="aiPanelRef?.userText ?? ''"
+      :default-kind="lastContentMode"
+      @use-manual="useManualFromPlaza"
+      @use-ai="useAiFromPlaza"
+      @toast="showToast"
     />
 
     <!-- 管理页。用 v-if 而不是 v-show：它是极少数人极少数时候才进的地方，
@@ -1454,7 +1499,7 @@ function textOptions(items: string[]): SelectOption[] {
           <button
             class="primary-btn tpl-plaza-btn"
             type="button"
-            @click="templateModalOpen = false; plazaOpen = true"
+            @click="templateModalOpen = false; selectMode('plaza')"
           >
             🏮 去万灯集逛逛
           </button>
@@ -1463,17 +1508,4 @@ function textOptions(items: string[]): SelectOption[] {
       </div>
     </Transition>
   </Teleport>
-
-  <!--
-    万灯集。手动模式和 AI 模式共用这一个弹窗实例，靠 kind 区分——两边的
-    列表/详情/发布流程完全一样，只有 payload 的含义不同。
-    currentPayload 传当前这份内容，用户点"发布我的"时打包的就是它。
-  -->
-  <PlazaModal
-    v-model:open="plazaOpen"
-    kind="manual"
-    :current-payload="JSON.stringify(form)"
-    @use="useManualTemplate"
-    @toast="showToast"
-  />
 </template>
