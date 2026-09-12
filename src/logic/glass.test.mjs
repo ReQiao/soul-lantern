@@ -7,7 +7,7 @@
  * 这里守的是"滤镜串本身生成对不对"，那是唯一能在 Node 里确定性验证的部分。
  */
 
-import { lensFilter, _clearLensCache } from "./glass.ts";
+import { lensFilter, _clearLensCache, thickness } from "./glass.ts";
 
 let passed = 0;
 let failed = 0;
@@ -91,6 +91,31 @@ const base = { width: 300, height: 200, radius: 24, depth: 10, strength: 44, chr
     "内嵌的位移图也被编码进去了",
     decodeURIComponent(f).includes("data:image/svg+xml"),
     "feImage 的 href 里应该嵌着位移图",
+  );
+}
+
+// --- 厚度层次（Apple：材质权重随尺寸变化）---
+{
+  ok("小控件算薄", thickness(60, 40) === 0);
+  ok("大面板算厚", thickness(900, 700) === 1);
+  ok(
+    "中等尺寸落在中间",
+    thickness(320, 320) > 0 && thickness(320, 320) < 1,
+    `实际 ${thickness(320, 320)}`,
+  );
+  ok(
+    "看短边而不是面积",
+    thickness(1200, 60) === thickness(60, 1200),
+    "一个很扁的横条在感觉上不该比同短边的方块更厚",
+  );
+  ok(
+    "越大越厚，单调不回头",
+    thickness(200, 200) < thickness(400, 400) && thickness(400, 400) < thickness(600, 600),
+  );
+  ok(
+    "极端值不越界",
+    thickness(0, 0) === 0 && thickness(1e6, 1e6) === 1,
+    "夹在 [0,1] 里，否则会算出负的模糊半径",
   );
 }
 

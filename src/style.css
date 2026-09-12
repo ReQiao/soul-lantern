@@ -36,8 +36,20 @@
      （rgba(255,255,255,.09)）再配 brightness(1.04)，两样叠起来把整个界面顶得
      发白发亮。玻璃在深色界面上应该比背景**更暗**才对——它挡光，不发光。
      现在铺的是深蓝黑，靠 alpha 控制通透度。 */
-  --glass-tint: linear-gradient(180deg, rgba(6, 14, 32, 0.26), rgba(4, 10, 24, 0.38));
-  --glass-tint-strong: linear-gradient(180deg, rgba(9, 17, 38, 0.52), rgba(5, 11, 27, 0.60));
+  /* 【染色浓度跟着 --clarity 走】那根滑杆（WWDC26 的透明度轴）不只是改折射，
+     底色也要跟着变，否则拖到"最实"那一端玻璃还是透的、字还是看不清。
+     --glass-tint-alpha 定义在文件末尾那段液态玻璃里，下限 0.22 是可读性硬底线。
+     两档渐变各自在这个基准上偏移，保持原来"上浅下深"的层次。 */
+  --glass-tint: linear-gradient(
+    180deg,
+    rgba(6, 14, 32, calc(var(--glass-tint-alpha) * 0.62)),
+    rgba(4, 10, 24, calc(var(--glass-tint-alpha) * 0.9))
+  );
+  --glass-tint-strong: linear-gradient(
+    180deg,
+    rgba(9, 17, 38, calc(var(--glass-tint-alpha) * 1.24)),
+    rgba(5, 11, 27, calc(var(--glass-tint-alpha) * 1.43))
+  );
   --glass-border: 1px solid rgba(255, 255, 255, 0.1);
   --glass-border-soft: 1px solid rgba(122, 162, 255, 0.2);
   --glass-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
@@ -267,7 +279,10 @@ button {
 .modal-card {
   border: var(--glass-border);
   border-radius: 16px;
-  background: var(--glass-tint-strong);
+  /* 背景在下面那条 .modal-card 里单独定义（那是弹窗刻意用的偏亮玻璃，
+     和别处的 --glass-tint-strong 不是一个东西）。这里不再写 background——
+     以前这儿有一条 `background: var(--glass-tint-strong)`，但它**从来没生效过**：
+     下面那条同选择器的规则会覆盖掉它。留着只会让人以为改这个变量能改弹窗颜色。 */
   box-shadow: var(--glass-shadow), var(--glass-edge);
   /* 降级版；真正的边缘折射由 logic/glass.ts 按元素实际尺寸生成后写成内联样式。
      WebKit / Gecko 不支持 backdrop-filter 里引用 SVG 滤镜，那里只有这一条生效。 */
@@ -281,8 +296,24 @@ button {
   --glass-brightness: 0.9;
 }
 
+/*
+ * 弹窗的玻璃底色。
+ *
+ * 和别处那层"比背景更暗"的玻璃相反，弹窗刻意用一层很淡的**亮**膜——它压在
+ * 真实内容上面，需要把自己和背景明确分开，而在这个深色界面里往亮了推比往暗了
+ * 推更能拉开层次。
+ *
+ * 两个 alpha 由 --glass-tint-alpha 推出来，也就是跟着那根透明度滑杆走。
+ * 系数取得让 clarity=0.55（默认值，此时 --glass-tint-alpha ≈ 0.353）时
+ * 正好还原成原来那对硬编码的 0.17 / 0.13——换句话说默认外观一个像素都没变，
+ * 只是现在能调了。
+ */
 .modal-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.13));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, calc(var(--glass-tint-alpha) * 0.48)),
+    rgba(255, 255, 255, calc(var(--glass-tint-alpha) * 0.37))
+  );
 }
 
 /*
@@ -3120,3 +3151,155 @@ button#primary,
 }
 .tpl-grid { max-height: 40vh; }
 .tpl-plaza-btn { align-self: flex-start; }
+
+/* ================================================================
+ * 液态玻璃：向 WWDC26 那一版靠拢的四件事
+ *
+ * 对照 Apple 自己在 WWDC26 上承认并修掉的可读性问题，这里补了四块。
+ * 折射/融合那部分在 logic/glass.ts（SVG 位移图），这里是纯 CSS 能做的部分。
+ * ================================================================ */
+
+/* ---- ① 透明度轴（WWDC26 的透明度滑杆）----
+ *
+ * --clarity 由 glass.ts 写到 :root 上，0 = 完全不透明，1 = 极清透。
+ * 染色的浓度跟着它走：越不透明，底色压得越实，玻璃上的字越好读。
+ * 真正消费 --glass-tint-alpha 的是文件开头的 --glass-tint / --glass-tint-strong。
+ *
+ * 【0.22 是可读性硬底线，别再往下调】玻璃背后是动态内容，静态测对比度没有
+ * 意义，只能用底色的不透明度下限来保证最坏情况（背后正好是一块和文字同色的
+ * 大色块）仍然读得清。
+ */
+:root {
+  --clarity: 0.55;
+  /* clamp 的下限就是那条底线。calc 里 1 - clarity 让"越清透染色越淡"。 */
+  --glass-tint-alpha: clamp(0.22, calc(0.2 + 0.34 * (1 - var(--clarity))), 0.62);
+}
+
+/* ---- ② 阴影随尺寸增强 ----
+ *
+ * 那三个变量由 glass.ts 按元素实际短边算出来写成内联样式（连续，不分档——
+ * 分档会在临界尺寸上跳一下）。这里给没被 JS 接管的元素留一组兜底值。
+ */
+.modal-card,
+.eula-box,
+.combo-menu,
+.info-bubble,
+.toast,
+.ai-topup-panel {
+  --glass-lift-y: 22px;
+  --glass-lift-blur: 52px;
+  --glass-lift-alpha: 0.34;
+  box-shadow:
+    0 var(--glass-lift-y) var(--glass-lift-blur) rgba(0, 0, 0, var(--glass-lift-alpha)),
+    var(--glass-edge);
+}
+
+/* ---- ③ Vibrancy：玻璃上的文字不能是平铺的灰 ----
+ *
+ * Apple 在半透明表面上不用降低不透明度来做次要文字，而是**提高对比度 +
+ * 加一点字重和字距**。原因很实际：opacity 压下去的灰字，一旦背后飘过一块
+ * 亮色就彻底看不见了；而加了字重和字距的字，在任何背景上都还站得住。
+ *
+ * 所以这里给玻璃上的次要文字定一套"看起来轻、但其实不是靠变淡实现的"样式。
+ */
+.modal-card .field-label,
+.modal-card .auth-hint,
+.modal-card .admin-hint,
+.eula-box .eula-lead,
+.info-bubble {
+  /* 不用 opacity 调淡，用一个本身就偏灰的实色——它不会被背景"吃掉" */
+  color: rgba(233, 240, 255, 0.82);
+  /* 小字加一点点字距才立得住（大字反过来要收紧，见下面 h1/h2） */
+  letter-spacing: 0.15px;
+}
+
+/* 玻璃上的标题：字号越大，字距越要收紧。一套固定的 letter-spacing 在某个
+   字号上一定是错的——大字用原始间距会显得散，小字收紧会糊成一团。 */
+.modal-card h2,
+.eula-box h2 {
+  letter-spacing: -0.2px;
+}
+.modal-card h3,
+.modal-card h4 {
+  letter-spacing: -0.1px;
+}
+
+/* 强调字：靠字重站住，不靠更亮的颜色——更亮的颜色在浅色背景上反而更糊 */
+.modal-card strong,
+.plaza-md strong {
+  font-weight: 650;
+}
+
+/* ---- ④ 材质化入场：模糊半径和缩放一起动 ----
+ *
+ * 之前弹窗是纯 opacity 淡入，读起来像"一张图片渐渐显影"。Apple 的玻璃出现时
+ * 是模糊和缩放一起变化的，读起来是"一块真材质到场"。
+ *
+ * 只动 filter 和 transform（合成器友好），不动 backdrop-filter——那个每帧重算
+ * 的代价太大，动画期间会直接掉帧。这里用 element 自己的 blur 近似"还没成形"
+ * 的那一下，视觉上足够。
+ */
+@keyframes glass-materialize {
+  from {
+    opacity: 0;
+    transform: scale(0.965);
+    filter: blur(7px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.modal-fade-enter-active .modal-card,
+.modal-fade-enter-active .eula-box {
+  /* 曲线尾巴长一点：材质"落定"的那一下要慢下来，急停会读成弹出而不是成形 */
+  animation: glass-materialize 320ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  will-change: transform, filter, opacity;
+}
+
+/* 退场走同一条路径的反向（Apple 的空间一致性：从哪来回哪去），
+   但更快——离开不需要被欣赏。 */
+.modal-fade-leave-active .modal-card,
+.modal-fade-leave-active .eula-box {
+  animation: glass-materialize 180ms cubic-bezier(0.4, 0, 0.7, 0.2) reverse;
+}
+
+/* 关了界面动画、或系统要求减弱动效时，材质化整个不放。
+   .no-motion 挂在 <html> 上（弹窗都 Teleport 到 body，挂 shell 上盖不住）。 */
+.no-motion .modal-fade-enter-active .modal-card,
+.no-motion .modal-fade-enter-active .eula-box,
+.no-motion .modal-fade-leave-active .modal-card,
+.no-motion .modal-fade-leave-active .eula-box {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-fade-enter-active .modal-card,
+  .modal-fade-enter-active .eula-box,
+  .modal-fade-leave-active .modal-card,
+  .modal-fade-leave-active .eula-box {
+    /* 不是"没有反馈"，是换成不引起前庭不适的那种：短促的淡入淡出 */
+    animation: none;
+    transition: opacity 160ms ease;
+  }
+}
+
+/* ---- 系统「减少透明度」----
+ *
+ * glass.ts 那边会把 clarity 按 0 算（折射和模糊都压到最低），这里把染色
+ * 补到接近实色。两边一起做才有意义：只压折射不加底色的话，玻璃还是透的。
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-tint-alpha: 0.86;
+  }
+}
+
+/* 玻璃透明度滑杆。放在设置那一列里，跟"启用界面动画"并排。 */
+.clarity-slider {
+  width: 100%;
+  accent-color: #ffc45c;
+  cursor: pointer;
+}

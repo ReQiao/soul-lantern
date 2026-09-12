@@ -16,7 +16,7 @@ import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
 import PlazaModal from "./components/PlazaModal.vue";
 import AdminPanel from "./components/AdminPanel.vue";
-import { installLiquidGlass } from "./logic/glass";
+import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
@@ -118,6 +118,16 @@ const preview = ref("");
 const activeTab = ref(form.version === "bedrock" ? "基岩选项" : "文本");
 const foodToolTab = ref("食物消耗");
 const animationEnabled = ref(loadAnimation());
+
+/**
+ * 玻璃透明度（WWDC26 那根滑杆）。0 = 完全不透明，1 = 极清透。
+ *
+ * 这个值不只是"好不好看"，也是**可读性开关**：玻璃背后是动态内容，背后正好
+ * 飘过一块亮色时，清透的那一端字是真的会看不清。所以它要能被用户自己调，
+ * 而不是我们替所有人定死一个值。
+ */
+const glassClarity = ref(getClarity());
+watch(glassClarity, (v) => setClarity(v));
 const dirty = ref(false);
 const toastText = ref("");
 const modal = reactive({ open: false, title: "", message: "", error: false });
@@ -1092,6 +1102,19 @@ function textOptions(items: string[]): SelectOption[] {
 
           <span></span>
           <label class="check-line"><input v-model="animationEnabled" type="checkbox" />启用界面动画</label>
+
+          <span class="field-label">
+            玻璃透明度
+            <InfoTip text="界面上那层毛玻璃有多透。往左更实、字更好读；往右更通透、折射更明显。系统开了「减少透明度」时会自动按最实的那一端处理。" />
+          </span>
+          <input
+            v-model.number="glassClarity"
+            class="clarity-slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+          />
         </div>
 
         <p class="status-text">{{ status }}</p>

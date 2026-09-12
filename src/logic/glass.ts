@@ -190,6 +190,84 @@ export const supportsSvgBackdropFilter: boolean = (() => {
   return /Chrom(e|ium)|Edg\//.test(ua) && !/(^|[^n])Gecko\/|FxiOS/.test(ua);
 })();
 
+// ---------------------------------------------------------------- clarity 轴
+//
+// WWDC26 承认了 Liquid Glass 的可读性批评，加了一根系统级的「透明度」滑杆：
+// 从极清透到完全不透明连续可调。这里照做——**不要把液态玻璃做成一个固定视觉，
+// 把它做成一条可调轴**。所有视觉参数都由这一个数推出来，调参入口只有一个。
+//
+// 默认 0.55（中间偏保守）。CSS 里那些 --glass-* 是每类面板的**基准**，
+// clarity 在基准上按比例缩放。
+
+const CLARITY_KEY = "soul-lantern-clarity";
+const DEFAULT_CLARITY = 0.55;
+
+/**
+ * 系统的「减少透明度」偏好。
+ *
+ * 打开这个开关的人，多半是真的看不清半透明表面上的字。所以命中时 clarity
+ * 直接按 0 处理（最不透明的那一端），而不是"稍微降一点"。
+ */
+function prefersReducedTransparency(): boolean {
+  if (typeof matchMedia !== "function") return false;
+  return matchMedia("(prefers-reduced-transparency: reduce)").matches;
+}
+
+function readClarity(): number {
+  try {
+    const v = parseFloat(localStorage.getItem(CLARITY_KEY) ?? "");
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DEFAULT_CLARITY;
+  } catch {
+    return DEFAULT_CLARITY;
+  }
+}
+
+let clarity = readClarity();
+
+export function getClarity(): number {
+  return clarity;
+}
+
+/**
+ * 已装好的面板重算入口。`installLiquidGlass` 跑起来之后才有值。
+ *
+ * 用模块级变量而不是让调用方自己拿：改 clarity 的是设置界面里那根滑杆，
+ * 它离 App.vue 里那次 install 调用很远，一路把 refresh 传下去只是噪音。
+ */
+let glassRefresh: (() => void) | null = null;
+
+/** 改透明度。已经装好的面板会自动跟着重算。 */
+export function setClarity(v: number): void {
+  clarity = Math.min(1, Math.max(0, v));
+  try {
+    localStorage.setItem(CLARITY_KEY, String(clarity));
+  } catch {
+    // 存不了就只影响这一次运行，不值得为它中断
+  }
+  document.documentElement.style.setProperty("--clarity", String(clarity));
+  glassRefresh?.();
+}
+
+/** 实际生效的 clarity：系统要求减少透明度时一律按 0 算。 */
+function effectiveClarity(): number {
+  return prefersReducedTransparency() ? 0 : clarity;
+}
+
+/**
+ * 「厚度」系数：大面板要读起来更厚。
+ *
+ * Apple 的规则是材质权重随尺寸变化——大面板更厚（模糊更强、阴影更深），
+ * 小控件更薄。之前所有玻璃用的是同一组参数，所以一个 40px 高的提示气泡和
+ * 一整块弹窗看起来是同一种材质，少了层次。
+ *
+ * 用短边而不是面积：一个很扁的横条在感觉上不该和一个大方块一样厚。
+ * 归一化到 [0,1]，120px 以下算薄、520px 以上算厚。
+ */
+export function thickness(width: number, height: number): number {
+  const short = Math.min(width, height);
+  return Math.min(1, Math.max(0, (short - 120) / 400));
+}
+
 // ---------------------------------------------------------------- 安装
 
 /**
@@ -241,6 +319,11 @@ function num(style: CSSStyleDeclaration, prop: string, fallback: number): number
  */
 function clear(el: HTMLElement) {
   el.style.removeProperty("backdrop-filter");
+  // 阴影那三个变量也要还回去，否则摘掉玻璃之后面板还顶着一个按尺寸算出来的
+  // 阴影，而那时候它已经不是一块玻璃了。
+  el.style.removeProperty("--glass-lift-y");
+  el.style.removeProperty("--glass-lift-blur");
+  el.style.removeProperty("--glass-lift-alpha");
 }
 
 function apply(el: HTMLElement) {
@@ -265,20 +348,60 @@ function apply(el: HTMLElement) {
     Math.floor(Math.min(w, h) / 2),
   );
 
+  // ---- clarity（那根总轴）和 thickness（尺寸带来的厚度层次）----
+  //
+  // CSS 里的 --glass-* 是这一类面板的**基准值**，下面两个系数在基准上缩放。
+  // 于是"这个弹窗比那个气泡厚"仍然写在 CSS 里，而"整体多透"只有一个入口。
+  const c = effectiveClarity();
+  const t = thickness(w, h);
+
+  // 越清透，折射越明显（Apple 的 Clear 变体就是折射强、染色弱）；
+  // 越厚的面板折射带越宽。
+  const strengthScale = 0.55 + 0.9 * c;
+  const depthScale = 0.85 + 0.35 * t;
+
   const filter = lensFilter({
     width: w,
     height: h,
     radius,
-    depth: safeDepth,
-    strength: num(cs, "--glass-strength", 44),
-    chromaticAberration: num(cs, "--glass-aberration", 0),
+    depth: Math.max(1, Math.round(safeDepth * depthScale)),
+    strength: num(cs, "--glass-strength", 44) * strengthScale,
+    // 色散是"清透玻璃"才有的味道。压到 0 附近时它只会让边缘发脏。
+    chromaticAberration: num(cs, "--glass-aberration", 0) * (0.3 + 0.7 * c),
   });
 
-  const blur = num(cs, "--glass-blur", 12);
+  // 大面板模糊更强、小控件更轻，这是"厚度"最直观的那一半。
+  const blur = num(cs, "--glass-blur", 12) * (0.8 + 0.5 * t) * (0.7 + 0.6 * (1 - c));
   const saturate = num(cs, "--glass-saturate", 180);
   const brightness = num(cs, "--glass-brightness", 1.04);
+
+  /**
+   * WWDC26 的「可读性扩散」。
+   *
+   * 光把背景模糊掉是不够的——一块高饱和的彩色内容糊了之后仍然是一片高饱和的
+   * 彩色，压在它上面的文字照样看不清。所以还要**压低背景的对比度和饱和度**，
+   * 让它整体退到后面去。clarity 越低压得越狠。
+   *
+   * 放在 blur 后面：先糊再压，压的是已经糊过的结果，省一次全分辨率的运算。
+   */
+  const diffuse = 1 - c; // 0（极清透，不压）… 1（最不透明，压满）
+  const dsat = Math.round(saturate * (1 - 0.35 * diffuse));
+  const dcontrast = (1 - 0.16 * diffuse).toFixed(3);
+
   el.style.backdropFilter =
-    `url('${filter}') blur(${blur}px) saturate(${saturate}%) brightness(${brightness})`;
+    `url('${filter}') blur(${blur.toFixed(1)}px) saturate(${dsat}%) ` +
+    `contrast(${dcontrast}) brightness(${brightness})`;
+
+  /**
+   * 阴影随尺寸增强。
+   *
+   * Apple 明说阴影强度和组件尺寸正相关——它提供的是前后景分离，大面板要压得
+   * 更实。写成内联变量而不是 CSS 里几个固定档：面板尺寸是连续的，分档会在
+   * 临界点上跳一下。
+   */
+  el.style.setProperty("--glass-lift-y", `${(14 + 26 * t).toFixed(0)}px`);
+  el.style.setProperty("--glass-lift-blur", `${(30 + 34 * t).toFixed(0)}px`);
+  el.style.setProperty("--glass-lift-alpha", (0.26 + 0.16 * t).toFixed(3));
 }
 
 /**
@@ -307,6 +430,17 @@ export function installLiquidGlass(): () => void {
       for (const el of batch) apply(el);
     });
   };
+
+  /**
+   * 已经认领过的面板。clarity 变化时要拿它重算一遍。
+   *
+   * 【声明必须在 `claim` 之前】`claim` 函数体里会 `claimed.add(el)`，而
+   * `claim(document)` 是在安装流程中间就调用的。用 `const` 声明在那之后的话，
+   * 第一次 claim 会撞上暂时性死区（TDZ）直接抛 ReferenceError，而这个异常
+   * 会让**整个 installLiquidGlass 中断**——表现是所有玻璃都没装上，界面看起来
+   * 只是"没有折射"，不像出了错。这个坑是靠 Playwright 跑一遍真界面才发现的。
+   */
+  const claimed = new Set<HTMLElement>();
 
   const ro = new ResizeObserver((entries) => {
     for (const e of entries) schedule(e.target as HTMLElement);
@@ -353,11 +487,32 @@ export function installLiquidGlass(): () => void {
       if (seen.has(el)) continue;
       seen.add(el);
       ro.observe(el);
+      claimed.add(el);
       schedule(el);
     }
   };
 
   claim(document);
+
+  // clarity 改了之后要把已经装好的面板全部重算一遍。
+  //
+  // 【为什么不做成 CSS 变量让浏览器自己重算】折射滤镜是一整个 SVG data URI，
+  // clarity 影响的是 SVG 里的数值，浏览器没法替我们重新生成它。这也是为什么
+  // clarity 必须走 JS 而不能像 --glass-blur 那样纯 CSS。
+  const refreshAll = () => {
+    for (const el of claimed) schedule(el);
+  };
+  glassRefresh = refreshAll;
+
+  // 系统「减少透明度」是可以在软件跑着的时候改的（Windows 的"透明效果"开关）。
+  // 不监听的话用户关掉它得重启软件才生效。
+  let mq: MediaQueryList | undefined;
+  const onMq = () => refreshAll();
+  if (typeof matchMedia === "function") {
+    mq = matchMedia("(prefers-reduced-transparency: reduce)");
+    mq.addEventListener("change", onMq);
+  }
+  document.documentElement.style.setProperty("--clarity", String(clarity));
 
   // 两件事都靠这个观察者：
   //   childList —— 弹窗是按需挂载的（v-if），后来出现的节点也要认领
@@ -383,6 +538,9 @@ export function installLiquidGlass(): () => void {
   });
 
   return () => {
+    glassRefresh = null;
+    mq?.removeEventListener("change", onMq);
+    claimed.clear();
     mo.disconnect();
     ro.disconnect();
     document.removeEventListener("pointerdown", onDown, true);
