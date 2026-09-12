@@ -135,6 +135,11 @@ export type AuthMode = "login" | "register" | "reset" | "change" | "rename" | "a
 export const authModalOpen = ref(false);
 /** 打开时停在哪一屏。改密码要能直接跳过去，不然用户得先看到登录表单再自己找。 */
 export const authModalMode = ref<AuthMode>("login");
+/**
+ * 触发这次弹窗的按钮元素，供 AuthModal 复用物品选择弹窗那套"从按钮飞出来"的
+ * 动画（见 morphPopup.ts）。拿不到就退化成纯淡入淡出，不是 bug。
+ */
+export const authModalOrigin = ref<HTMLElement | null>(null);
 
 /**
  * 登录成功后要不要顺势切进 AI 模式。
@@ -144,8 +149,14 @@ export const authModalMode = ref<AuthMode>("login");
  */
 export const pendingAiSwitch = ref(false);
 
-export function openAuth(mode: AuthMode) {
+/**
+ * 打开登录弹窗。`origin` 可以直接传按钮元素，也可以图省事把点击事件本身传进来——
+ * 后一种情况这里帮忙取 `currentTarget`，调用点就不用每次都写一遍类型转换。
+ */
+export function openAuth(mode: AuthMode, origin?: Event | HTMLElement | null) {
   authModalMode.value = mode;
+  authModalOrigin.value =
+    origin instanceof Event ? (origin.currentTarget as HTMLElement | null) : (origin ?? null);
   authModalOpen.value = true;
 }
 

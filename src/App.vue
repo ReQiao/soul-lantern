@@ -26,6 +26,7 @@ import {
   auth,
   authModalMode,
   authModalOpen,
+  authModalOrigin,
   gated as authGated,
   openAuth,
   pendingAiSwitch,
@@ -213,10 +214,10 @@ const showAdminTab = computed(() => auth.value.adminVerified);
  * 登录成功后由 onAuthed 补上这次切换，那时 AiPanel 的 active 从 false 变 true，
  * 点灯动画照常触发——用户看到的顺序是「登录 → 灯亮 → 进 AI」，比反过来顺。
  */
-function selectMode(next: Mode) {
+function selectMode(next: Mode, event?: Event) {
   if (next === "ai" && authGated.value) {
     pendingAiSwitch.value = true;
-    openAuth("login");
+    openAuth("login", event);
     // 顺手再确认一次门禁开关：如果是"启动那一刻连不上服务器"导致的误判，
     // 这一次刷新就能纠正过来，用户不用重启软件。
     void recheckAuth().then(() => {
@@ -1005,7 +1006,7 @@ function textOptions(items: string[]): SelectOption[] {
             role="tab"
             :aria-selected="mode === 'ai'"
             :class="{ active: mode === 'ai' }"
-            @click="selectMode('ai')"
+            @click="selectMode('ai', $event)"
           >AI 模式</button>
           <!-- 只有解锁过管理权限的会话才看得到这个 tab。退出登录/重新登录之后
                它会自己消失，因为 adminVerified 是跟着服务端会话走的。 -->
@@ -1371,6 +1372,8 @@ function textOptions(items: string[]): SelectOption[] {
   <AuthModal
     v-model:open="authModalOpen"
     :initial-mode="authModalMode"
+    :origin="authModalOrigin"
+    :animate="animationEnabled"
     @authed="onAuthed"
     @toast="showToast"
   />

@@ -19,14 +19,25 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { smsSignName } from "../logic/auth";
+import { useMorphPopup } from "../logic/morphPopup";
 
 const props = withDefaults(
   defineProps<{
     /** 打开时停在哪一屏。改密码要能从账号区直接跳进来，不用先看到登录表单。 */
     initialMode?: Mode;
+    /** 触发弹窗的按钮元素：弹窗从它的位置"流出来"，关闭时收回它的位置。
+     *  和 ItemPickerModal 是同一套约定，见 morphPopup.ts。 */
+    origin?: HTMLElement | null;
+    /** 同 AiPanel 的 :animate 约定：关了界面动画时直接跳过展开/收回动效 */
+    animate?: boolean;
   }>(),
-  { initialMode: "login" },
+  { initialMode: "login", origin: null, animate: true },
 );
+
+const { onEnter, onLeave } = useMorphPopup({
+  getOrigin: () => props.origin,
+  getAnimate: () => props.animate !== false,
+});
 
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{
@@ -304,9 +315,14 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="open" class="modal-overlay" @click.self="open = false">
-        <div class="modal-card auth-card" @keydown="onKeydown">
+    <Transition :css="false" @enter="onEnter" @leave="onLeave">
+      <div v-if="open" class="modal-overlay picker-overlay" @click.self="open = false">
+        <div class="picker-scrim"></div>
+        <div class="modal-card picker-card auth-card" @keydown="onKeydown">
+          <div class="picker-brand" aria-hidden="true">
+            <span class="picker-brand-label"></span>
+          </div>
+          <div class="picker-inner auth-inner">
           <div class="auth-head">
             <h2>{{ title }}</h2>
             <button class="picker-close" type="button" aria-label="关闭" @click="open = false">×</button>
@@ -595,6 +611,7 @@ function onKeydown(event: KeyboardEvent) {
           </div>
 
           <p v-if="errorText" class="auth-error">{{ errorText }}</p>
+          </div>
         </div>
       </div>
     </Transition>

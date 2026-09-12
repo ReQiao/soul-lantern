@@ -489,7 +489,7 @@ function copyAll() {
         （现在连不上服务器，可能是网络问题或者服务器在维护，稍后再试试。）
       </p>
       <div class="ai-gate-actions">
-        <button class="primary-btn" type="button" @click="openAuth('login')">登录 / 注册</button>
+        <button class="primary-btn" type="button" @click="openAuth('login', $event)">登录 / 注册</button>
       </div>
     </div>
 
@@ -501,15 +501,15 @@ function copyAll() {
       </span>
       <span v-if="auth.loggedIn" class="ai-account">
         <span class="ai-username">{{ displayName(auth.username, auth.isAdmin) }}</span>
-        <button type="button" class="auth-link" @click="openAuth('rename')">改名</button>
-        <button type="button" class="auth-link" @click="openAuth('change')">修改密码</button>
+        <button type="button" class="auth-link" @click="openAuth('rename', $event)">改名</button>
+        <button type="button" class="auth-link" @click="openAuth('change', $event)">修改密码</button>
         <!-- 已经解锁过就不再显示这个入口——解锁是幂等的，但重复显示会让人
              以为"是不是掉了要再认一次"。管理页入口在 App.vue 的模式切换那排。 -->
         <button
           v-if="!auth.adminVerified"
           type="button"
           class="auth-link"
-          @click="openAuth('admin')"
+          @click="openAuth('admin', $event)"
         >
           管理员认证
         </button>
@@ -519,7 +519,7 @@ function copyAll() {
            也就是门禁块（唯一另一个登录按钮所在处）没渲染——少了这个 v-else，
            用户就会卡在"点充值报请登录、但界面上找不到哪里能登录"的死胡同里。 -->
       <span v-else class="ai-account">
-        <button type="button" class="auth-link" @click="openAuth('login')">登录 / 注册</button>
+        <button type="button" class="auth-link" @click="openAuth('login', $event)">登录 / 注册</button>
       </span>
       <button type="button" class="ai-topup-toggle" @click="showTopup = !showTopup">
         充值

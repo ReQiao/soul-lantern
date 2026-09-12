@@ -2559,8 +2559,17 @@ button#primary,
 .auth-card {
   display: flex;
   width: clamp(300px, 42vw, 420px);
+  max-height: calc(100vh - 48px);
   flex-direction: column;
   gap: 12px;
+}
+
+/* .picker-card 是给"内容自己有个滚动的网格"的弹窗设计的，整块卡片本身
+   overflow:hidden（动画变形要靠它裁边角）。登录弹窗没有那样一块内部网格，
+   内容长了（比如注册屏那几条提示 + 表单）就得让 .picker-inner 自己滚动，
+   不然会被 .picker-card 的 overflow:hidden 直接裁掉、够不着。 */
+.auth-inner {
+  overflow-y: auto;
 }
 
 .auth-head {
