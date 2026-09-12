@@ -2661,3 +2661,462 @@ button#primary,
   min-width: 120px;
   margin-top: 8px;
 }
+
+/* ---------------------------------------------------------------- 万灯集
+ *
+ * 弹窗本体沿用 .modal-card（同一套玻璃/圆角/折射），这里只加内部布局。
+ * 尺寸比普通弹窗大得多——它是个"逛"的界面，不是个确认框。
+ */
+.plaza-card {
+  width: min(920px, 94vw);
+  max-width: none;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.plaza-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plaza-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.plaza-lantern {
+  /* 灯笼是这个功能的标志物，给它一点暖光，和背景那盏呼应 */
+  filter: drop-shadow(0 0 10px rgba(255, 176, 76, 0.55));
+}
+.plaza-kind {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.plaza-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.plaza-search {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+.plaza-pub-btn { flex: 0 0 auto; }
+
+.plaza-empty {
+  padding: 40px 0;
+  text-align: center;
+  opacity: 0.55;
+  font-size: 14px;
+}
+
+/* 列表用 grid 而不是一列：作品卡片信息密度低，一列会拉得很长要一直滚。 */
+.plaza-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  /* 给滚动条留出空间，否则出现滚动条时整栅格会横向抖一下 */
+  padding-right: 4px;
+}
+
+.plaza-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  text-align: left;
+  border-radius: 12px;
+  cursor: pointer;
+  /* 列表项**不上玻璃**：它们在一个已经是玻璃的弹窗里，玻璃叠玻璃是明确的
+     反模式（可读性会塌），而且几十个 backdrop-filter 图层会直接拖垮滚动。 */
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.plaza-item:hover {
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(255, 196, 92, 0.35);
+}
+.plaza-item:active { transform: scale(0.985); }
+
+.plaza-item-icon {
+  font-size: 22px;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+.plaza-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.plaza-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  /* 半透明表面上的标题：靠字重和字距站住，而不是靠纯亮度 */
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plaza-item-excerpt {
+  font-size: 12px;
+  opacity: 0.6;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.plaza-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+.plaza-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 196, 92, 0.16);
+  color: #ffd479;
+  opacity: 1;
+}
+.plaza-liked { color: #ff9d9d; opacity: 1; }
+.plaza-faved { color: #ffd479; opacity: 1; }
+
+/* ---------------- 详情 ---------------- */
+
+.plaza-detail-head { flex: 0 0 auto; }
+
+.plaza-detail-title {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.plaza-detail-title h3 { margin: 0 0 4px; font-size: 17px; }
+.plaza-detail-meta {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plaza-md {
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.75;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.plaza-md-empty { opacity: 0.45; font-size: 13px; }
+.plaza-md h1 { font-size: 17px; margin: 12px 0 6px; }
+.plaza-md h2 { font-size: 15px; margin: 12px 0 6px; }
+.plaza-md h3 { font-size: 14px; margin: 10px 0 5px; }
+.plaza-md p { margin: 6px 0; }
+.plaza-md ul, .plaza-md ol { margin: 6px 0; padding-left: 22px; }
+.plaza-md li { margin: 3px 0; }
+.plaza-md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+}
+.plaza-md pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow-x: auto;
+}
+.plaza-md pre code { background: none; padding: 0; }
+.plaza-md blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid rgba(255, 196, 92, 0.5);
+  opacity: 0.85;
+}
+.plaza-md hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 12px 0;
+}
+.plaza-md .md-link {
+  color: #ffd479;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.plaza-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.plaza-on {
+  border-color: rgba(255, 196, 92, 0.55) !important;
+  color: #ffd479;
+}
+.plaza-danger { color: #ff9d9d; }
+
+/* ---------------- 评论 ---------------- */
+
+.plaza-comments {
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+}
+.plaza-comments h4 { margin: 0 0 8px; font-size: 13px; opacity: 0.8; }
+.plaza-comment {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.plaza-comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.plaza-comment-head strong { font-size: 12px; opacity: 1; }
+.plaza-comment-body {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  /* 评论是纯文本渲染（不过 Markdown），换行要保留，长串要能断 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.plaza-comment-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.plaza-comment-form input { flex: 1; }
+
+/* ---------------- 发布 ---------------- */
+
+.plaza-publish { overflow-y: auto; }
+.plaza-pub-row { display: flex; gap: 10px; }
+.plaza-pub-icon { flex: 0 0 110px; }
+.plaza-pub-cat { flex: 1; }
+.plaza-pub-detail {
+  min-height: 160px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------- 管理页 */
+
+.admin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-tabs { min-width: 150px; }
+.admin-who {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.admin-search { width: 100%; }
+
+/* 左列表右详情。两栏而不是"点开进详情页"：改余额这件事经常要在几个人之间
+   来回比对，每次都要退回列表很烦。 */
+.admin-split {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.admin-user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 9px;
+  text-align: left;
+  cursor: pointer;
+  /* 和万灯集列表项同理：这是在一块玻璃里面，不能再叠玻璃 */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+}
+.admin-user:hover { background: rgba(255, 255, 255, 0.08); }
+.admin-user-on {
+  background: rgba(255, 196, 92, 0.14);
+  border-color: rgba(255, 196, 92, 0.4);
+}
+.admin-user-name { font-size: 13px; font-weight: 600; }
+.admin-user-meta { font-size: 11px; opacity: 0.55; }
+.admin-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 400;
+  background: rgba(255, 196, 92, 0.2);
+  color: #ffd479;
+}
+
+.admin-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.admin-detail h4 { margin: 0; font-size: 15px; }
+
+.admin-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12px;
+}
+.admin-kv dt { opacity: 0.55; }
+.admin-kv dd {
+  margin: 0;
+  /* 用户 ID 是一长串随机 token，不断开会把整个网格撑爆 */
+  word-break: break-all;
+}
+.admin-health { font-size: 13px; gap: 6px 18px; }
+
+.admin-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.admin-row input { flex: 1 1 120px; min-width: 90px; }
+
+.admin-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.62;
+}
+.admin-warn { color: #ffb36b; opacity: 1; }
+
+/* 不可撤销的操作单独给一个红调的边，让它在一堆长得一样的表单里跳出来 */
+.admin-danger-block {
+  border-top-color: rgba(255, 120, 120, 0.28);
+}
+
+/* ---------------- 环境变量 ---------------- */
+
+.admin-env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.admin-env-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.admin-env-key {
+  flex: 0 0 210px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.admin-env-value {
+  flex: 1 1 160px;
+  font-size: 12px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+.admin-env-secret { opacity: 0.45; font-style: italic; }
+.admin-env-input { flex: 1 1 200px; }
+.admin-danger-tag,
+.admin-restart-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+.admin-danger-tag { background: rgba(255, 110, 110, 0.2); color: #ff9d9d; }
+.admin-restart-tag { background: rgba(255, 255, 255, 0.1); opacity: 0.7; }
+
+/* ---------------- 价格 ---------------- */
+
+.admin-policy {
+  width: 100%;
+  min-height: 46vh;
+  resize: vertical;
+  /* JSON 要等宽，不然缩进对不齐根本没法读 */
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------- 模板库弹窗 */
+.tpl-card {
+  width: min(680px, 92vw);
+  max-width: none;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.tpl-section {
+  margin: 6px 0 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.tpl-grid { max-height: 40vh; }
+.tpl-plaza-btn { align-self: flex-start; }

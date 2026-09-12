@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import CatalogCombo from "./components/CatalogCombo.vue";
@@ -14,6 +14,8 @@ import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
+import PlazaModal from "./components/PlazaModal.vue";
+import AdminPanel from "./components/AdminPanel.vue";
 import { installLiquidGlass } from "./logic/glass";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
@@ -21,6 +23,7 @@ import { playIntro } from "./logic/intro";
 // 换图之后不会因为浏览器缓存显示旧的。
 import lanternUrl from "./assets/soul-lantern.png";
 import {
+  auth,
   authModalMode,
   authModalOpen,
   gated as authGated,
@@ -119,11 +122,76 @@ const dirty = ref(false);
 const toastText = ref("");
 const modal = reactive({ open: false, title: "", message: "", error: false });
 const fileInput = ref<HTMLInputElement | null>(null);
-const selectedBuiltinTemplate = ref("");
+/**
+ * 内置模板 + 万灯集收藏，现在合到一个弹窗里（原来是个下拉框）。
+ *
+ * 换成弹窗是因为要装的东西变多了：内置那几份 + 从万灯集收藏来的任意多份，
+ * 而且收藏项还要能取消收藏、能看是谁做的。一个 `<select>` 塞不下这些。
+ */
+const templateModalOpen = ref(false);
+/** 万灯集弹窗。手动模式和 AI 模式各自打开它，靠 kind 区分。 */
+const plazaOpen = ref(false);
+
+/**
+ * 模板库里"我收藏的"那一栏。
+ *
+ * 每次打开弹窗都重新拉：收藏是在万灯集那个弹窗里改的，缓存住的话用户收藏完
+ * 回到模板库会看不到刚收的那份，只能重启软件。数据量是"一个人收藏几份"，
+ * 重拉的成本可以忽略。
+ */
+interface FavoriteWork {
+  id: string;
+  title: string;
+  icon: string | null;
+  authorName: string;
+}
+const favoriteTemplates = ref<FavoriteWork[]>([]);
+const favoritesLoading = ref(false);
+
+async function loadFavoriteTemplates() {
+  if (!isTauri()) return;
+  favoritesLoading.value = true;
+  try {
+    favoriteTemplates.value = await invoke<FavoriteWork[]>("plaza_list", {
+      query: "kind=manual&favorites=true",
+    });
+  } catch {
+    // 没登录 / 连不上服务器都会走到这儿。收藏栏空着就是了，内置模板照常能用——
+    // 手动模式本来就该在完全离线的情况下可用。
+    favoriteTemplates.value = [];
+  } finally {
+    favoritesLoading.value = false;
+  }
+}
+
+watch(templateModalOpen, (open) => {
+  if (open) void loadFavoriteTemplates();
+});
+
+/** 从模板库里直接载入一份收藏的万灯集模板。 */
+async function useFavoriteTemplate(id: string, title: string) {
+  try {
+    const d = await invoke<{ payload: string }>("plaza_get", { id });
+    void invoke("plaza_download", { id }).catch(() => {});
+    useManualTemplate(d.payload, title);
+    templateModalOpen.value = false;
+  } catch (err) {
+    showMessage("载入失败", err instanceof Error ? err.message : String(err), true);
+  }
+}
 const itemPickerOpen = ref(false);
 const pickBtnEl = ref<HTMLButtonElement | null>(null);
-/** 手动填表 / AI 自然语言，两种模式共用顶部的版本选择。 */
-const mode = ref<"manual" | "ai">("manual");
+/** 手动填表 / AI 自然语言 / 管理页，共用顶部的版本选择。 */
+type Mode = "manual" | "ai" | "admin";
+const mode = ref<Mode>("manual");
+
+/**
+ * 管理页的入口只在**当前会话已经解锁过管理权限**时出现。
+ *
+ * 注意这不是安全边界，只是"要不要画这个 tab"——真正的拦截在服务端，每个
+ * admin_* 命令都会独立再验一次会话上的标记，没解锁一律 404。
+ */
+const showAdminTab = computed(() => auth.value.adminVerified);
 
 /**
  * 切模式。未登录点「AI 模式」时**不切过去**——停在手动模式，直接把登录框弹出来。
@@ -135,7 +203,7 @@ const mode = ref<"manual" | "ai">("manual");
  * 登录成功后由 onAuthed 补上这次切换，那时 AiPanel 的 active 从 false 变 true，
  * 点灯动画照常触发——用户看到的顺序是「登录 → 灯亮 → 进 AI」，比反过来顺。
  */
-function selectMode(next: "manual" | "ai") {
+function selectMode(next: Mode) {
   if (next === "ai" && authGated.value) {
     pendingAiSwitch.value = true;
     openAuth("login");
@@ -272,14 +340,6 @@ const builtinTemplates = computed(() =>
     };
   }),
 );
-const builtinTemplateOptions = computed<SelectOption[]>(() => [
-  { label: "选择内置模板", value: "" },
-  ...builtinTemplates.value.map((template) => ({
-    label: template.label,
-    value: template.value,
-    description: "内置 JSON 模板",
-  })),
-]);
 const targetCatalog = [
   ["@s", "@s", "自己 self"],
   ["@p", "@p", "最近玩家 nearest player"],
@@ -324,8 +384,134 @@ const autosaveTimer = window.setInterval(() => {
   status.value = "状态：已自动保存";
 }, 1000);
 
+// ---------------- 撤销 / 重做 / 重置 ----------------
+
+/**
+ * 表单的历史栈。
+ *
+ * 做法是**整份快照**（`JSON.stringify(form)`），不是命令模式的增量 diff。
+ * 理由：这个表单有七个页签、几十个字段、四张可增删的行表（附魔/属性/方块/
+ * 工具规则），而每一处修改的入口分散在十几个地方（下拉、输入框、行表的
+ * 增删改、载入模板、切版本时的自动裁剪…）。要做增量就得在每一个入口都
+ * 记一笔，漏一个就会出现"撤销之后状态串了"——那种 bug 极难复现也极难查。
+ * 整份快照的代价只是几 KB 字符串，换来的是"不可能漏记"。
+ *
+ * 快照在**防抖之后**才入栈：连续敲字是一次编辑意图，不该变成二十步撤销。
+ */
+const HISTORY_LIMIT = 60;
+const history: string[] = [JSON.stringify(form)];
+/** 当前停在历史里的第几步。撤销/重做移动它，新编辑会砍掉它后面的分支。 */
+const historyIndex = ref(0);
+/**
+ * 正在由撤销/重做本身改写表单。
+ *
+ * 没有这个标志的话，撤销触发的那次表单变化会被下面的 watch 当成"用户又改了
+ * 一次"再压一条历史进去，于是撤销一步、历史长一条，永远退不回去。
+ */
+let restoring = false;
+let historyTimer: number | undefined;
+
+const canUndo = computed(() => historyIndex.value > 0);
+const canRedo = computed(() => historyIndex.value < history.length - 1);
+
+function pushHistory() {
+  const snapshot = JSON.stringify(form);
+  if (snapshot === history[historyIndex.value]) return; // 没真的变，不记
+  // 从中间撤销之后又做了新修改：后面那段分支作废，这是撤销栈的标准语义。
+  history.splice(historyIndex.value + 1);
+  history.push(snapshot);
+  if (history.length > HISTORY_LIMIT) history.shift();
+  historyIndex.value = history.length - 1;
+}
+
+watch(
+  form,
+  () => {
+    if (restoring) return;
+    window.clearTimeout(historyTimer);
+    // 400ms：比一次连续输入的间隔长，比"改完一处停下来想想"短。
+    historyTimer = window.setTimeout(pushHistory, 400);
+  },
+  { deep: true },
+);
+
+function restoreSnapshot(snapshot: string) {
+  restoring = true;
+  // 直接 Object.assign 而不是走 applyFormData：快照就是这个表单自己刚才的
+  // 样子，不需要再 normalize 一遍（normalize 会补默认值，而"用户手动清空了
+  // 某一项"和"这一项没填"在快照里是要区分的）。
+  Object.assign(form, JSON.parse(snapshot));
+  refreshPreviewIfGenerated();
+  // 等这一轮响应式更新跑完再放开标志，否则 deep watch 还是会看到这次变化。
+  void nextTick(() => {
+    restoring = false;
+  });
+}
+
+function undo() {
+  window.clearTimeout(historyTimer);
+  // 【先补一条】用户可能改完还没到 400ms 就按了 Ctrl+Z。不补的话那次修改
+  // 从没进过历史，撤销会跳过它直接退到更早的状态，感觉像"撤销撤多了"。
+  pushHistory();
+  if (!canUndo.value) {
+    showToast("没有可以撤销的了");
+    return;
+  }
+  historyIndex.value -= 1;
+  restoreSnapshot(history[historyIndex.value]);
+  status.value = "状态：已撤销";
+}
+
+function redo() {
+  if (!canRedo.value) {
+    showToast("没有可以重做的了");
+    return;
+  }
+  historyIndex.value += 1;
+  restoreSnapshot(history[historyIndex.value]);
+  status.value = "状态：已重做";
+}
+
+/** 清空所有输入，回到打开软件时的空白表单。会进历史，所以能撤销回来。 */
+function resetForm() {
+  if (!confirm("清空所有输入，回到空白表单？\n（可以用撤销退回来）")) return;
+  window.clearTimeout(historyTimer);
+  pushHistory();
+  Object.assign(form, createDefaultForm());
+  preview.value = "";
+  status.value = "状态：已重置";
+  pushHistory();
+  showToast("已重置");
+}
+
+/**
+ * Ctrl+Z / Ctrl+Y（以及 Ctrl+Shift+Z）。
+ *
+ * 在输入框里打字时**不接管**：那时候浏览器自己的文本撤销才是用户想要的，
+ * 抢过来会让人没法撤销刚打错的那几个字。
+ */
+function onHistoryKey(e: KeyboardEvent) {
+  if (!e.ctrlKey && !e.metaKey) return;
+  const el = e.target as HTMLElement | null;
+  const tag = el?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+  if (mode.value !== "manual") return;
+
+  const key = e.key.toLowerCase();
+  if (key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  } else if (key === "y" || (key === "z" && e.shiftKey)) {
+    e.preventDefault();
+    redo();
+  }
+}
+window.addEventListener("keydown", onHistoryKey);
+
 onBeforeUnmount(() => {
   window.clearInterval(autosaveTimer);
+  window.clearTimeout(historyTimer);
+  window.removeEventListener("keydown", onHistoryKey);
 });
 
 onMounted(() => {
@@ -552,13 +738,34 @@ async function handleTemplateFile(event: Event) {
 }
 
 function applyBuiltinTemplate(value: string) {
-  selectedBuiltinTemplate.value = value;
   if (!value) return;
   const template = builtinTemplates.value.find((item) => item.value === value);
   if (!template) return;
   applyFormData(template.data);
   status.value = `状态：已载入内置模板 ${template.label}`;
   showToast("内置模板已载入");
+  templateModalOpen.value = false;
+}
+
+/**
+ * 万灯集里"用这个"点下来之后。
+ *
+ * 手动模板的 payload 是一份表单 JSON。**必须走 normalizeForm**（applyFormData
+ * 内部做的事）而不是直接塞进 form：那份 JSON 来自别的用户、可能是别的版本
+ * 的软件存的，字段缺失或多余都可能。
+ */
+function useManualTemplate(payload: string, title: string) {
+  try {
+    applyFormData(JSON.parse(payload));
+    status.value = `状态：已载入万灯集模板 ${title}`;
+    showToast(`已载入「${title}」`);
+  } catch (err) {
+    showMessage(
+      "这份模板载入失败",
+      `内容不是有效的表单数据：${err instanceof Error ? err.message : String(err)}`,
+      true,
+    );
+  }
 }
 
 function showMessage(title: string, message: string, error = false) {
@@ -790,6 +997,16 @@ function textOptions(items: string[]): SelectOption[] {
             :class="{ active: mode === 'ai' }"
             @click="selectMode('ai')"
           >AI 模式</button>
+          <!-- 只有解锁过管理权限的会话才看得到这个 tab。退出登录/重新登录之后
+               它会自己消失，因为 adminVerified 是跟着服务端会话走的。 -->
+          <button
+            v-if="showAdminTab"
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'admin'"
+            :class="{ active: mode === 'admin' }"
+            @click="selectMode('admin')"
+          >管理</button>
         </div>
       </div>
       <!--
@@ -807,17 +1024,19 @@ function textOptions(items: string[]): SelectOption[] {
           <span class="field-label">版本<InfoTip text="AI 生成的指令会按这个版本的语法构建。" /></span>
           <CustomSelect v-model="form.version" :options="versionOptions" />
         </div>
-        <div class="top-form" :class="{ 'stack-hidden': mode === 'ai' }" :inert="mode === 'ai'">
+        <!-- 判断写 `!== 'manual'` 而不是 `=== 'ai'`：加了管理页这个第三种模式
+             之后，`=== 'ai'` 会让手动模式那一整条工具条（模板名、保存/读取、
+             生成、复制）在管理页里继续露着。 -->
+        <div class="top-form" :class="{ 'stack-hidden': mode !== 'manual' }" :inert="mode !== 'manual'">
           <span class="field-label">模板名<InfoTip text="保存模板时使用这个名称作为 JSON 文件名。" /></span>
           <input v-model="form.templateName" class="template-input" />
-          <CustomSelect
-            class="builtin-template-select"
-            :model-value="selectedBuiltinTemplate"
-            :options="builtinTemplateOptions"
-            @update:model-value="applyBuiltinTemplate"
-          />
+          <button type="button" @click="templateModalOpen = true">模板库</button>
+          <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
           <button type="button" @click="saveTemplate">保存模板</button>
           <button type="button" @click="loadTemplate">读取模板</button>
+          <button type="button" :disabled="!canUndo" title="Ctrl+Z" @click="undo">撤销</button>
+          <button type="button" :disabled="!canRedo" title="Ctrl+Y" @click="redo">重做</button>
+          <button type="button" @click="resetForm">重置</button>
           <button type="button" @click="copy">{{ copyButtonText }}</button>
           <button class="primary-btn" type="button" @click="generate">{{ generateButtonText }}</button>
           <input ref="fileInput" accept="application/json,.json" hidden type="file" @change="handleTemplateFile" />
@@ -836,6 +1055,10 @@ function textOptions(items: string[]): SelectOption[] {
       @toast="showToast"
       @update:version="form.version = $event"
     />
+
+    <!-- 管理页。用 v-if 而不是 v-show：它是极少数人极少数时候才进的地方，
+         没必要为它常驻一份 DOM 和一堆 watch。 -->
+    <AdminPanel v-if="mode === 'admin'" :active="mode === 'admin'" @toast="showToast" />
 
     <!--
       故意不用 <Transition> 包裹手动内容：实测证明哪怕只给 enter 定义 CSS、
@@ -1135,4 +1358,84 @@ function textOptions(items: string[]): SelectOption[] {
     错过一次就永远没有了。
   -->
   <NoticeModal :notices="pendingNotices" @dismiss="pendingNotices.shift()" />
+
+  <!--
+    模板库：内置模板 + 从万灯集收藏来的。
+    原来这里是个下拉框，装不下"收藏项还要能看作者、能取消收藏"这些东西。
+  -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="templateModalOpen" class="modal-overlay" @click.self="templateModalOpen = false">
+        <div class="modal-card tpl-card">
+          <div class="plaza-head">
+            <h2>模板库</h2>
+            <button class="picker-close" type="button" aria-label="关闭" @click="templateModalOpen = false">×</button>
+          </div>
+
+          <h4 class="tpl-section">内置模板</h4>
+          <div class="plaza-grid tpl-grid">
+            <button
+              v-for="t in builtinTemplates"
+              :key="t.value"
+              type="button"
+              class="plaza-item"
+              @click="applyBuiltinTemplate(t.value)"
+            >
+              <span class="plaza-item-icon">📄</span>
+              <span class="plaza-item-body">
+                <span class="plaza-item-title">{{ t.label }}</span>
+                <span class="plaza-item-meta"><span class="plaza-tag">内置</span></span>
+              </span>
+            </button>
+          </div>
+
+          <h4 class="tpl-section">我收藏的</h4>
+          <div v-if="favoritesLoading" class="admin-hint">正在拉取…</div>
+          <div v-else-if="favoriteTemplates.length" class="plaza-grid tpl-grid">
+            <button
+              v-for="f in favoriteTemplates"
+              :key="f.id"
+              type="button"
+              class="plaza-item"
+              @click="useFavoriteTemplate(f.id, f.title)"
+            >
+              <span class="plaza-item-icon">{{ f.icon || "🏮" }}</span>
+              <span class="plaza-item-body">
+                <span class="plaza-item-title">{{ f.title }}</span>
+                <span class="plaza-item-meta">
+                  <span class="plaza-tag">万灯集</span>
+                  <span>{{ f.authorName }}</span>
+                </span>
+              </span>
+            </button>
+          </div>
+          <p v-else class="admin-hint">
+            在万灯集里点☆收藏的手动模板会出现在这儿。（没登录的话这一栏一直是空的，
+            但内置模板照常能用——手动模式本来就不需要联网。）
+          </p>
+
+          <button
+            class="primary-btn tpl-plaza-btn"
+            type="button"
+            @click="templateModalOpen = false; plazaOpen = true"
+          >
+            🏮 去万灯集逛逛
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!--
+    万灯集。手动模式和 AI 模式共用这一个弹窗实例，靠 kind 区分——两边的
+    列表/详情/发布流程完全一样，只有 payload 的含义不同。
+    currentPayload 传当前这份内容，用户点"发布我的"时打包的就是它。
+  -->
+  <PlazaModal
+    v-model:open="plazaOpen"
+    kind="manual"
+    :current-payload="JSON.stringify(form)"
+    @use="useManualTemplate"
+    @toast="showToast"
+  />
 </template>

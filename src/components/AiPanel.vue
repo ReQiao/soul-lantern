@@ -25,6 +25,7 @@ import {
   recheckAuth,
 } from "../logic/auth";
 import CustomSelect from "./CustomSelect.vue";
+import PlazaModal from "./PlazaModal.vue";
 import DeployPanel from "./DeployPanel.vue";
 import InfoTip from "./InfoTip.vue";
 
@@ -285,6 +286,19 @@ const MODEL_OPTIONS = [
   { label: "GLM-5.3（需服务端支持）", value: "glm-5.3" },
 ] as const;
 const apiModel = ref<string>("");
+
+/**
+ * 万灯集（AI 模板那一侧）。
+ *
+ * 和手动模式共用同一个组件，只是 `kind` 传 "ai"：那边的 payload 是表单 JSON，
+ * 这边是一段提示词。发布时打包的就是输入框里现在这段文字。
+ */
+const plazaOpen = ref(false);
+
+function usePrompt(payload: string, title: string) {
+  userText.value = payload;
+  emit("toast", `已载入「${title}」，可以直接生成，也可以改改再生成`);
+}
 
 const userText = ref("");
 const busy = ref(false);
@@ -592,6 +606,7 @@ function copyAll() {
         {{ busy ? "生成中…" : "AI 生成指令" }}
       </button>
       <button type="button" :disabled="commands.length === 0" @click="copyAll">复制全部</button>
+      <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
     </div>
 
     <p v-if="errorText" class="ai-error">{{ errorText }}</p>
@@ -635,5 +650,15 @@ function copyAll() {
       @update:version="(v) => emit('update:version', v)"
     />
     </template>
+
+    <!-- 万灯集：AI 模板那一侧。currentPayload 传输入框里现在这段提示词，
+         用户点"发布我的"时打包的就是它。 -->
+    <PlazaModal
+      v-model:open="plazaOpen"
+      kind="ai"
+      :current-payload="userText"
+      @use="usePrompt"
+      @toast="(m) => emit('toast', m)"
+    />
   </section>
 </template>
