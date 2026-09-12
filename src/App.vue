@@ -13,6 +13,7 @@ import DeployPanel from "./components/DeployPanel.vue";
 import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
+import NoticeModal from "./components/NoticeModal.vue";
 import { installLiquidGlass } from "./logic/glass";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
@@ -25,6 +26,7 @@ import {
   gated as authGated,
   openAuth,
   pendingAiSwitch,
+  pendingNotices,
   recheckAuth,
   refreshAuth,
 } from "./logic/auth";
@@ -1126,4 +1128,11 @@ function textOptions(items: string[]): SelectOption[] {
     @authed="onAuthed"
     @toast="showToast"
   />
+
+  <!--
+    余额变动通知。放在 EULA 门禁外面、和 AuthModal 平级：它自己 Teleport 到
+    body，而且只要队列非空就该弹——这批消息是一次性的（服务端读到即清空），
+    错过一次就永远没有了。
+  -->
+  <NoticeModal :notices="pendingNotices" @dismiss="pendingNotices.shift()" />
 </template>

@@ -26,6 +26,21 @@ pub struct AuthState {
     /// 服务器连不上时为 true。界面要把"没登录"和"连不上服务器"分开说，
     /// 否则用户会以为自己账号出了问题，跑去反复重新注册。
     pub offline: bool,
+    /// 这个账号是管理员。界面靠它在名字后面缀 `<管理员>`。
+    pub is_admin: bool,
+    /// 当前会话已经用 ADMIN_TOKEN 解锁过。管理页入口只在这个为 true 时出现。
+    ///
+    /// 和 `is_admin` 分开是服务端的设计：账号标记只管显示，真正的权限跟着
+    /// 会话走、登出即失效、每次重新登录都要重新验一次 token。
+    pub admin_verified: bool,
+    /// 收藏的万灯集作品 id。
+    pub favorites: Vec<String>,
+    /// 管理员改过余额留给这个用户的通知。
+    ///
+    /// **服务端读到即清空**，所以这批数据一辈子只会到达客户端一次。
+    /// 谁拿到谁就得负责弹出来——`auth_state` 每次调用都可能带回一批新的，
+    /// 前端不能因为"这次不方便显示"就丢掉。
+    pub notices: Vec<remote::BalanceNotice>,
 }
 
 impl AuthState {
@@ -37,6 +52,10 @@ impl AuthState {
             balance: 0,
             activated: false,
             offline: false,
+            is_admin: false,
+            admin_verified: false,
+            favorites: Vec::new(),
+            notices: Vec::new(),
         }
     }
 }
@@ -68,6 +87,10 @@ pub async fn auth_state() -> Result<AuthState, ()> {
             balance: me.balance,
             activated: me.activated,
             offline: false,
+            is_admin: me.user.is_admin,
+            admin_verified: me.admin_verified,
+            favorites: me.user.favorites,
+            notices: me.notices,
         }),
         Err(e) => {
             // remote::parse_json 遇到 401 已经清过本地会话了。这里只需要区分
@@ -196,6 +219,14 @@ pub async fn auth_register_verify(phone: String, code: String) -> Result<AuthSta
         balance: s.balance,
         activated: s.activated,
         offline: false,
+        is_admin: s.user.is_admin,
+        // 刚登录的会话一定没解锁管理权限——服务端每次发新会话都是 false，
+        // 要用 ADMIN_TOKEN 单独解锁。
+        admin_verified: s.admin_verified,
+        favorites: s.user.favorites,
+        // 登录响应不带通知。通知走 /v1/auth/me（auth_state），
+        // 前端登录成功后本来就会刷一次登录态，那一次会拿到。
+        notices: Vec::new(),
     })
 }
 
@@ -210,6 +241,14 @@ pub async fn auth_login(account: String, password: String) -> Result<AuthState, 
         balance: s.balance,
         activated: s.activated,
         offline: false,
+        is_admin: s.user.is_admin,
+        // 刚登录的会话一定没解锁管理权限——服务端每次发新会话都是 false，
+        // 要用 ADMIN_TOKEN 单独解锁。
+        admin_verified: s.admin_verified,
+        favorites: s.user.favorites,
+        // 登录响应不带通知。通知走 /v1/auth/me（auth_state），
+        // 前端登录成功后本来就会刷一次登录态，那一次会拿到。
+        notices: Vec::new(),
     })
 }
 
@@ -230,6 +269,46 @@ pub async fn auth_change_password(
         return Err("两次输入的新密码不一样。".to_string());
     }
     remote::change_password(&old_password, &new_password).await
+}
+
+/// 改用户名。
+///
+/// 本地只做一点点即时校验（长度、「管理员」三个字），真正的判重和规范化在
+/// 服务端——本地拦掉的是"不用跑一趟网络就知道不行"的那些。
+#[tauri::command]
+pub async fn auth_change_username(new_username: String) -> Result<AuthState, String> {
+    let name = new_username.trim();
+    let n = name.chars().count();
+    if !(2..=24).contains(&n) {
+        return Err("用户名需要 2~24 个字符。".to_string());
+    }
+    if name.contains("管理员") {
+        return Err("用户名里不能含「管理员」三个字。".to_string());
+    }
+    remote::change_username(name).await?;
+    auth_state().await.map_err(|_| "改完之后刷新登录态失败。".to_string())
+}
+
+/// 用 ADMIN_TOKEN 解锁当前会话的管理权限。
+///
+/// **token 不落盘**：只在这一次调用里出现，用完就没了。每次重新登录都要
+/// 重新输——这是服务端"管理权限跟着会话走"设计的客户端一侧。
+#[tauri::command]
+pub async fn auth_admin_unlock(token: String) -> Result<AuthState, String> {
+    let t = token.trim();
+    if t.is_empty() {
+        return Err("请输入管理员 token。".to_string());
+    }
+    remote::admin_unlock(t).await.map_err(|e| {
+        // 服务端对"token 不对"和"这台服务器没配管理功能"故意返回同一个 404，
+        // 这里也不要替它编一个更具体的解释。
+        if e.contains("拒绝了这次请求") || e.contains("Not Found") {
+            "管理员 token 不对，或者这台服务器没有开启管理功能。".to_string()
+        } else {
+            e
+        }
+    })?;
+    auth_state().await.map_err(|_| "解锁之后刷新登录态失败。".to_string())
 }
 
 #[tauri::command]

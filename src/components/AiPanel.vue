@@ -18,6 +18,7 @@ import type { GiveVersion } from "../logic/builder";
 import {
   auth,
   desktop,
+  displayName,
   gated,
   logout as doLogout,
   openAuth,
@@ -485,8 +486,19 @@ function copyAll() {
         <InfoTip text="每次 AI 生成会按真实调用花费（不同模型单价不同）折算扣除灵魂币，不是固定扣一个数。当前充值是免费测试阶段，不会真的扣款。" />
       </span>
       <span v-if="auth.loggedIn" class="ai-account">
-        {{ auth.username }}
+        <span class="ai-username">{{ displayName(auth.username, auth.isAdmin) }}</span>
+        <button type="button" class="auth-link" @click="openAuth('rename')">改名</button>
         <button type="button" class="auth-link" @click="openAuth('change')">修改密码</button>
+        <!-- 已经解锁过就不再显示这个入口——解锁是幂等的，但重复显示会让人
+             以为"是不是掉了要再认一次"。管理页入口在 App.vue 的模式切换那排。 -->
+        <button
+          v-if="!auth.adminVerified"
+          type="button"
+          class="auth-link"
+          @click="openAuth('admin')"
+        >
+          管理员认证
+        </button>
         <button type="button" class="auth-link" @click="logout">退出登录</button>
       </span>
       <!-- 未登录时这里必须有入口。走到这个分支说明 gated 是 false，

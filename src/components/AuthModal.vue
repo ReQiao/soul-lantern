@@ -35,7 +35,7 @@ const emit = defineEmits<{
   toast: [message: string];
 }>();
 
-type Mode = "login" | "register" | "reset" | "change";
+type Mode = "login" | "register" | "reset" | "change" | "rename" | "admin";
 const mode = ref<Mode>("login");
 const busy = ref(false);
 const errorText = ref("");
@@ -56,6 +56,14 @@ const confirmPassword = ref("");
 const oldPassword = ref("");
 const changePassword_ = ref("");
 const changeConfirm = ref("");
+
+// 改用户名
+const newUsername = ref("");
+
+// 管理员认证。**这个 token 只活在这个 ref 里**：不写 localStorage、不写会话
+// 文件、提交完就清掉。它是全服务器权限最大的一个字符串，多存一处就多一条
+// 泄露路径，而重新输一遍的成本只有几秒。
+const adminToken = ref("");
 
 // 找回密码
 const resetPhone = ref("");
@@ -91,6 +99,8 @@ const TITLES: Record<Mode, string> = {
   register: "注册账号",
   reset: "找回密码",
   change: "修改密码",
+  rename: "修改用户名",
+  admin: "管理员认证",
 };
 const title = computed(() => TITLES[mode.value]);
 
@@ -105,6 +115,7 @@ function startCooldown(secs: number) {
 
 function resetAll() {
   errorText.value = "";
+  adminToken.value = "";
   codeSent.value = false;
   code.value = "";
   phoneMasked.value = "";
@@ -232,6 +243,27 @@ async function doChangePassword() {
     emit("authed");
     emit("toast", "密码已修改，请用新密码重新登录");
     switchTo("login");
+  }
+}
+
+async function doChangeUsername() {
+  const ok = await run(() => invoke("auth_change_username", { newUsername: newUsername.value.trim() }));
+  if (ok !== undefined) {
+    newUsername.value = "";
+    emit("authed");
+    emit("toast", "用户名已修改");
+    open.value = false;
+  }
+}
+
+async function doAdminUnlock() {
+  const ok = await run(() => invoke("auth_admin_unlock", { token: adminToken.value.trim() }));
+  // 无论成败都立刻清掉，别让它留在内存里等着被下一次打开弹窗时看见
+  adminToken.value = "";
+  if (ok !== undefined) {
+    emit("authed");
+    emit("toast", "管理员已认证，管理页已解锁");
+    open.value = false;
   }
 }
 
@@ -442,6 +474,53 @@ function onKeydown(event: KeyboardEvent) {
             <div class="auth-links">
               <button type="button" class="auth-link" @click="switchTo('reset')">不记得原密码了？用短信重置</button>
             </div>
+          </div>
+
+          <!-- ---------------- 改用户名 ---------------- -->
+          <div v-else-if="mode === 'rename'" class="auth-form">
+            <label class="auth-field">
+              <span>新用户名</span>
+              <input
+                ref="firstInput"
+                v-model="newUsername"
+                placeholder="2~24 个字符，可以用中文"
+                spellcheck="false"
+                @keydown.enter="doChangeUsername"
+              />
+            </label>
+            <p class="auth-hint">
+              改名之后，你在万灯集里<strong>已经发过的作品和评论</strong>仍然显示旧名字——
+              那是发表当时的署名快照，不会被回填。
+            </p>
+            <button class="primary-btn auth-submit" type="button" :disabled="busy" @click="doChangeUsername">
+              {{ busy ? "提交中…" : "改名" }}
+            </button>
+          </div>
+
+          <!-- ---------------- 管理员认证 ---------------- -->
+          <div v-else-if="mode === 'admin'" class="auth-form">
+            <p class="auth-hint">
+              输入服务器 <code>.env</code> 里的 <code>ADMIN_TOKEN</code>，解锁管理页。
+            </p>
+            <label class="auth-field">
+              <span>管理员 token</span>
+              <input
+                ref="firstInput"
+                v-model="adminToken"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                @keydown.enter="doAdminUnlock"
+              />
+            </label>
+            <!-- 这两句不是免责声明，是让人知道"为什么每次都要输" -->
+            <p class="auth-notice">
+              这个 token <strong>不会被保存</strong>，每次重新登录都要再输一次。
+              管理权限是记在服务器的这条会话上的，退出登录就没了。
+            </p>
+            <button class="primary-btn auth-submit" type="button" :disabled="busy" @click="doAdminUnlock">
+              {{ busy ? "验证中…" : "解锁管理页" }}
+            </button>
           </div>
 
           <!-- ---------------- 找回密码 ---------------- -->

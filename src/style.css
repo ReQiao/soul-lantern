@@ -2595,3 +2595,69 @@ button#primary,
   color: rgba(174, 183, 218, 0.5);
   cursor: default;
 }
+
+/* ---------------------------------------------------------------- 余额变动通知
+ *
+ * 形态跟着 .modal-card 走（同一套玻璃、同一套圆角），只加"这一条是加还是扣"
+ * 的色彩区分和那张颜文字脸。
+ */
+.notice-overlay {
+  /* 比普通弹窗高一层：它可能和登录框/万灯集详情同时在场，而它是一次性的，
+     被盖住就等于丢了。 */
+  z-index: 120;
+}
+
+.notice-card {
+  max-width: 380px;
+  text-align: center;
+  padding: 26px 24px 20px;
+}
+
+.notice-face {
+  font-size: 30px;
+  line-height: 1.2;
+  margin-bottom: 14px;
+  /* 颜文字里的括号在中文字体下会被排得很怪，强制走等宽的西文字形 */
+  font-family: "Segoe UI", "Helvetica Neue", monospace;
+  letter-spacing: 1px;
+}
+
+.notice-gain .notice-face { color: #ffd479; text-shadow: 0 0 18px rgba(255, 196, 92, 0.5); }
+.notice-loss .notice-face { color: #9fb4d8; }
+
+.notice-line {
+  font-size: 15px;
+  line-height: 1.7;
+  margin: 0 0 6px;
+}
+.notice-line strong {
+  font-size: 19px;
+  /* 数字是这条消息的重点，给它一点额外的字重和字距（vibrancy：
+     半透明表面上的文字要靠对比度而不是纯灰度来站住） */
+  letter-spacing: 0.4px;
+}
+.notice-gain .notice-line strong { color: #ffd479; }
+.notice-loss .notice-line strong { color: #ff9d9d; }
+
+.notice-sub {
+  margin: 0 0 14px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.notice-balance {
+  margin: 0 0 4px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.notice-more {
+  margin: 0 0 12px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.notice-ok {
+  min-width: 120px;
+  margin-top: 8px;
+}

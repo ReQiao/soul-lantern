@@ -17,6 +17,14 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export const desktop = isTauri();
 
+/** 管理员改过余额之后留给用户的一条留言。 */
+export interface BalanceNotice {
+  /** 正数是加、负数是扣。界面按正负选两套完全不同的文案。 */
+  delta: number;
+  balanceAfter: number;
+  at: number;
+}
+
 export interface AuthState {
   loggedIn: boolean;
   username: string;
@@ -28,6 +36,27 @@ export interface AuthState {
    * 混成一句的话用户会以为自己账号出了问题，跑去反复重新注册。
    */
   offline: boolean;
+  /** 这个账号是管理员。名字后面缀 `<管理员>` 靠它。 */
+  isAdmin: boolean;
+  /**
+   * 当前会话已经用 ADMIN_TOKEN 解锁过管理权限。
+   *
+   * 和 `isAdmin` 分开是服务端的两层设计：账号标记只管显示，真正的权限跟着
+   * 会话走、登出即失效、每次重新登录都要重新验一次 token。管理页入口只在
+   * 这个为 true 时出现——但它**不是安全边界**，真正的拦截在服务端，
+   * 前端把入口强行画出来也没用，每个调用照样被 404 挡回去。
+   */
+  adminVerified: boolean;
+  /** 收藏的万灯集作品 id。 */
+  favorites: string[];
+  /**
+   * 管理员改余额留下的通知。
+   *
+   * **服务端读到即清空**，所以这批数据一辈子只会到达客户端一次。
+   * `refreshAuth` 拿到之后必须立刻搬进 `pendingNotices`（下面那个队列），
+   * 否则下一次 `refreshAuth` 覆盖 `auth.value` 时就永远丢了。
+   */
+  notices: BalanceNotice[];
 }
 
 const LOGGED_OUT: AuthState = {
@@ -37,7 +66,23 @@ const LOGGED_OUT: AuthState = {
   balance: 0,
   activated: false,
   offline: false,
+  isAdmin: false,
+  adminVerified: false,
+  favorites: [],
+  notices: [],
 };
+
+/**
+ * 待弹出的余额变动通知。
+ *
+ * 【为什么要单独一个队列，不直接读 auth.value.notices】服务端那批通知是
+ * **一次性**的：`/v1/auth/me` 读到就清空，第二次调用返回的是空数组。而
+ * `refreshAuth()` 会被很多地方调用（启动、登录后、充值 401 之后、点 AI 模式…），
+ * 只要其中任意一次发生在"通知还没来得及弹出来"之前，`auth.value` 一被覆盖，
+ * 那批通知就再也找不回来了——用户永远不知道管理员给他发过币。
+ * 所以拿到的第一时间就搬进这个独立的队列，弹完再出队。
+ */
+export const pendingNotices = ref<BalanceNotice[]>([]);
 
 export const auth = ref<AuthState>({ ...LOGGED_OUT });
 
@@ -85,7 +130,7 @@ export const gated = computed(
 
 // ---------------- 弹窗 ----------------
 
-export type AuthMode = "login" | "register" | "reset" | "change";
+export type AuthMode = "login" | "register" | "reset" | "change" | "rename" | "admin";
 
 export const authModalOpen = ref(false);
 /** 打开时停在哪一屏。改密码要能直接跳过去，不然用户得先看到登录表单再自己找。 */
@@ -109,10 +154,23 @@ export function openAuth(mode: AuthMode) {
 export async function refreshAuth() {
   if (!desktop) return;
   try {
-    auth.value = await invoke<AuthState>("auth_state");
+    const next = await invoke<AuthState>("auth_state");
+    // 先把一次性通知搬走再赋值，见 pendingNotices 的注释。
+    if (next.notices?.length) pendingNotices.value.push(...next.notices);
+    auth.value = next;
   } catch {
     // auth_state 自己已经把各种失败折叠成"未登录"了，走到这里说明 invoke 本身炸了
   }
+}
+
+/**
+ * 用户名的显示形式：管理员后面缀 `<管理员>`。
+ *
+ * 用户名本身被服务端禁止含「管理员」三个字（auth.rs::validate_username），
+ * 所以这个后缀不会和真名混淆。
+ */
+export function displayName(name: string, isAdmin: boolean): string {
+  return isAdmin ? `${name} <管理员>` : name;
 }
 
 export async function refreshAuthRequired() {

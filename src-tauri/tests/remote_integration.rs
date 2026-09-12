@@ -134,6 +134,11 @@ fn start_test_server(bin: &PathBuf, dir: &PathBuf) -> (Guard, PathBuf, u16, Logs
         .env("SMS_KIND", "log")
         // 一个用例里要连续走注册和找回密码，默认 60 秒冷却跑不动
         .env("SMS_MIN_INTERVAL_SECS", "0")
+        // 服务端从某一版起把免费充值口**默认关掉**了（它没有支付网关，
+        // 开着等于谁注册谁能白拿额度）。这个测试要验的是"档位表由服务器下发"
+        // 这条链路，所以显式开一下——不开的话 /v1/topup/tiers 返回空数组，
+        // 测试会失败在一个和它想验的事情完全无关的地方。
+        .env("TOPUP_ENABLED", "1")
         .env("RUST_LOG", "info")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

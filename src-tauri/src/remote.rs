@@ -164,6 +164,13 @@ pub struct UserView {
     pub username: String,
     pub phone_masked: String,
     pub created_at: u64,
+    /// 这个账号是管理员。界面靠它在名字后面缀 `<管理员>`。
+    /// 老服务端不发这个字段，所以要 default。
+    #[serde(default)]
+    pub is_admin: bool,
+    /// 收藏的万灯集作品 id。
+    #[serde(default)]
+    pub favorites: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -174,6 +181,8 @@ pub struct SessionView {
     pub user: UserView,
     pub balance: i64,
     pub activated: bool,
+    #[serde(default)]
+    pub admin_verified: bool,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -182,6 +191,22 @@ pub struct MeView {
     pub user: UserView,
     pub balance: i64,
     pub activated: bool,
+    /// 当前会话有没有通过 ADMIN_TOKEN 验证。管理页入口靠它显示。
+    #[serde(default)]
+    pub admin_verified: bool,
+    /// 管理员手动改余额留下的通知。**服务端读到即清空**，所以这批数据
+    /// 只会到达客户端一次——拿到就必须弹出来，丢了就再也没有了。
+    #[serde(default)]
+    pub notices: Vec<BalanceNotice>,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceNotice {
+    /// 正数是加、负数是扣。界面按正负选两套完全不同的文案。
+    pub delta: i64,
+    pub balance_after: i64,
+    pub at: u64,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -264,6 +289,168 @@ pub async fn reset_confirm(phone: &str, code: &str, new_password: &str) -> Resul
     )
     .await?;
     Ok(())
+}
+
+pub async fn change_username(new_username: &str) -> Result<MeView, String> {
+    post_auth("/v1/auth/username", &serde_json::json!({ "newUsername": new_username })).await
+}
+
+/// 用 ADMIN_TOKEN 把当前会话升级成管理员会话。
+///
+/// token 只在这一次调用里出现，**不落盘、不缓存**。每次重新登录都要重新输
+/// 一遍——这正是服务端把管理权限记在会话上（而不是记在账号上）的用意。
+pub async fn admin_unlock(token: &str) -> Result<MeView, String> {
+    post_auth("/v1/auth/admin/unlock", &serde_json::json!({ "token": token })).await
+}
+
+// ---------------------------------------------------------------- 管理页
+//
+// 这一整段都只在"当前会话已解锁管理员"时才有意义。没解锁的话服务端一律
+// 回 404（不是 403），所以这里的错误信息会是"服务器拒绝了这次请求"，
+// 界面上要引导用户回去重新输 token，而不是显示成"功能坏了"。
+
+pub async fn admin_users() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/users").await
+}
+
+pub async fn admin_lookup(query: &str) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/lookup", &serde_json::json!({ "query": query })).await
+}
+
+pub async fn admin_adjust_balance(query: &str, delta: i64) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/balance", &serde_json::json!({ "query": query, "delta": delta })).await
+}
+
+pub async fn admin_delete_user(query: &str, confirm: &str) -> Result<serde_json::Value, String> {
+    post_auth(
+        "/v1/admin/session/user/delete",
+        &serde_json::json!({ "query": query, "confirm": confirm }),
+    )
+    .await
+}
+
+pub async fn admin_get_env() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/env").await
+}
+
+pub async fn admin_set_env(
+    key: &str,
+    value: &str,
+    confirm: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    post_auth(
+        "/v1/admin/session/env",
+        &serde_json::json!({ "key": key, "value": value, "confirm": confirm }),
+    )
+    .await
+}
+
+pub async fn admin_get_policy() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/policy").await
+}
+
+pub async fn admin_set_policy(policy: serde_json::Value) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/policy", &serde_json::json!({ "policy": policy })).await
+}
+
+/// 以某人身份登录。返回的 token 由调用方（admin.rs）写进本地会话文件——
+/// 换句话说这一步会把当前的管理员会话**顶掉**，回去要重新登录。
+pub async fn admin_impersonate(query: &str) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/impersonate", &serde_json::json!({ "query": query })).await
+}
+
+pub async fn admin_health() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/health").await
+}
+
+pub async fn admin_restart() -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/restart", &serde_json::json!({})).await
+}
+
+// ---------------------------------------------------------------- 万灯集
+//
+// 返回类型统一用 serde_json::Value 而不是各定义一个结构体。
+//
+// 【为什么这里可以，账号那边不行】账号那边字段对不上会静默出错（比如
+// balance 读不到就默认 0，用户看到余额清零），所以必须用强类型 + 集成测试
+// 兜住。万灯集这边客户端只是**原样转发给前端渲染**，一个字段都不参与计算，
+// 中间加一层 Rust 结构体只会变成"每加一个字段要在三个地方各写一遍"。
+
+/// 匿名也能看的 GET。广场不要求登录——没登录时不带 Authorization 头，
+/// 服务端据此把 liked/favorited 都算成 false。
+async fn get_maybe_auth<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
+    let mut req = client().get(format!("{}{path}", server_base()));
+    if let Some(t) = session::token() {
+        req = req.bearer_auth(t);
+    }
+    let resp = req.send().await.map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+pub async fn plaza_categories() -> Result<serde_json::Value, String> {
+    get_maybe_auth("/v1/plaza/categories").await
+}
+
+pub async fn plaza_list(query: &str) -> Result<serde_json::Value, String> {
+    let path = if query.is_empty() {
+        "/v1/plaza/works".to_string()
+    } else {
+        format!("/v1/plaza/works?{query}")
+    };
+    get_maybe_auth(&path).await
+}
+
+pub async fn plaza_get(id: &str) -> Result<serde_json::Value, String> {
+    get_maybe_auth(&format!("/v1/plaza/works/{id}")).await
+}
+
+pub async fn plaza_publish(body: serde_json::Value) -> Result<serde_json::Value, String> {
+    post_auth("/v1/plaza/works", &body).await
+}
+
+pub async fn plaza_delete(id: &str) -> Result<serde_json::Value, String> {
+    let token = bearer()?;
+    let resp = client()
+        .delete(format!("{}/v1/plaza/works/{id}", server_base()))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+pub async fn plaza_like(id: &str) -> Result<serde_json::Value, String> {
+    post_auth(&format!("/v1/plaza/works/{id}/like"), &serde_json::json!({})).await
+}
+
+pub async fn plaza_favorite(id: &str) -> Result<serde_json::Value, String> {
+    post_auth(&format!("/v1/plaza/works/{id}/favorite"), &serde_json::json!({})).await
+}
+
+/// 记一次下载。失败不该挡住用户真正的动作（内容详情里已经拿到了），
+/// 所以调用方通常忽略它的错误。
+pub async fn plaza_download(id: &str) -> Result<serde_json::Value, String> {
+    let resp = client()
+        .post(format!("{}/v1/plaza/works/{id}/download", server_base()))
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+pub async fn plaza_comment(id: &str, body: &str) -> Result<serde_json::Value, String> {
+    post_auth(&format!("/v1/plaza/works/{id}/comments"), &serde_json::json!({ "body": body })).await
+}
+
+pub async fn plaza_delete_comment(id: &str, comment_id: &str) -> Result<serde_json::Value, String> {
+    let token = bearer()?;
+    let resp = client()
+        .delete(format!("{}/v1/plaza/works/{id}/comments/{comment_id}", server_base()))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    parse_json(resp).await
 }
 
 pub async fn server_version() -> Result<VersionView, String> {
