@@ -2503,6 +2503,28 @@ button#primary,
     min-width: 0;
   }
 
+  /*
+   * 【修这个】窄屏下 .app-shell 从"固定一屏高、内部裁切"变成"跟内容一起
+   * 长高、让整个页面滚"（上面那几条），但 .shell-frost 还是按`position:
+   * absolute` 相对 .app-shell 定位、尺寸钉死在"一屏高 + 模糊余量"——.app-shell
+   * 长到好几屏之后，霜化背景只盖住了最上面那一屏，往下滚一段就滚出了它的
+   * 覆盖范围，底下露出的是完全没加霜化处理的 .app-shell 原始背景，看起来
+   * 像是"清晰度滑杆突然生效了/变透明了"，其实是背景没跟着页面一起变长。
+   *
+   * 改成 `position: fixed` 之后它相对**视口**定位，不管页面滚多远、
+   * .app-shell 实际有多高，它都稳稳盖住当前这一屏——跟 .app-bg（最底层的灯
+   * 光背景）用的是同一个思路。定位数值也要跟着从"相对 .app-shell 内边距盒"
+   * 换成"相对视口"：不用再减那个 margin(14)+border(1)=15px 的偏移，
+   * 只留给模糊采样的余量（-80px）。
+   */
+  .shell-frost {
+    position: fixed;
+    top: -80px;
+    left: -80px;
+    width: calc(100vw + 160px);
+    height: calc(100vh + 160px);
+  }
+
   .top-card {
     flex-wrap: wrap;
     min-width: 0;
