@@ -2,7 +2,9 @@
 name = "soul-lantern"
 version = "4.1.0"
 description = "Minecraft Soul Lantern command generator"
-authors = ["you"]
+authors = ["ReQiao"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ReQiao/soul-lantern"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

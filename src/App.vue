@@ -84,7 +84,7 @@ const animationKey = "give-generator-animation";
 // 重新要求同意一遍，而不是永远沿用当初点过的那次同意。
 // v2：加了账号体系之后要收手机号，按《个人信息保护法》必须单独告知并取得同意。
 // 只改文案不改这个数字的话，已经点过同意的老用户永远看不到新条款，那份告知等于没做。
-const EULA_VERSION = "2";
+const EULA_VERSION = "3";
 const eulaKey = `give-generator-eula-accepted-v${EULA_VERSION}`;
 const eulaAccepted = ref(localStorage.getItem(eulaKey) === "true");
 const eulaScrolledToEnd = ref(false);
@@ -908,27 +908,41 @@ function textOptions(items: string[]): SelectOption[] {
           只有当你主动使用 AI 模式时，才需要注册账号并联网。下面第三、四节专门讲这件事，请重点看。
         </p>
 
-        <h3>一、版权与授权</h3>
+        <h3>一、软件授权（开源）</h3>
         <p>
-          本软件（含全部源代码、界面设计，以及"自然语言 → AI 意图 → 确定性指令构建器"这一实现方式）
-          版权归开发者所有，受《中华人民共和国著作权法》及相关法律法规保护，未经明示授予的权利均予保留。
+          本客户端是<strong>自由软件</strong>，版权归 ReQiao 所有，按
+          <strong>GNU Affero 通用公共许可证第 3 版或更高版本（AGPL-3.0-or-later）</strong>授权。
+          在遵守该许可证的前提下，你可以自由地运行、研究、修改和再分发本软件，
+          <strong>包括查看和使用它的源代码</strong>——不需要另外取得开发者许可。
         </p>
         <p>
-          开发者仅授予你在自有设备上运行本软件、使用其生成的游戏内指令的权利；
-          你因安装或使用本软件，不因此获得对源代码本身的任何权利。
+          许可证要求你在再分发（含分发修改版）时保留版权声明、并以同一许可证授权衍生作品。
+          完整条款以随程序分发的 LICENSE 文件为准，源代码在
+          <span class="eula-mono">github.com/ReQiao/soul-lantern</span>。
+        </p>
+        <p>
+          <strong>AI 模式连接的服务端不属于本软件</strong>：它是开发者自行运营的独立作品，
+          不随本客户端分发，也不以 AGPL 授权。本协议第三节起讲的都是使用那个服务的条款。
         </p>
 
-        <h3>二、禁止行为</h3>
-        <p>未经开发者书面许可，你不得从事以下行为：</p>
+        <h3>二、使用服务时的禁止行为</h3>
+        <p>
+          本节约束的是<strong>你对开发者所运营服务的使用</strong>，不是对软件本身的限制——
+          软件本身的权利以第一节的 AGPL 授权为准。使用 AI 模式时你不得：
+        </p>
         <ul>
-          <li>对本软件进行反编译、反汇编、逆向工程，或以其他方式还原其源代码；</li>
-          <li>复制、传播、出售、二次分发本软件的源代码或其实质性部分（包括但不限于指令构建逻辑）；</li>
-          <li>移除、隐藏或篡改本软件内的版权声明、作者信息或本协议；</li>
           <li>
             以脚本、自动化程序或其他非正常手段批量注册账号、批量索取短信验证码、
-            绕过计费或干扰服务器正常运行。
+            绕过计费或干扰服务器正常运行；
           </li>
+          <li>使用他人的手机号注册，或将账号出借、出租、转售给他人；</li>
+          <li>移除、隐藏或篡改本软件内的版权声明与许可证文件（这同时也是 AGPL 本身的要求）。</li>
         </ul>
+        <p>
+          <strong>关于灵魂币与激活码</strong>：它们购买的是<strong>AI 服务的调用额度</strong>
+          （用于支付上游大模型的真实调用成本），<strong>不是软件许可</strong>。
+          本客户端按 AGPL 免费授权，不出售也无法出售；不购买任何额度，手动模式依然完整可用。
+        </p>
 
         <h3>三、账号与手机号（个人信息处理告知）</h3>
         <p>
@@ -953,7 +967,7 @@ function textOptions(items: string[]): SelectOption[] {
         <p>
           <strong>你的权利</strong>：你可以随时查询、更正你的账号信息，或要求注销账号并删除全部相关数据。
           注销后余额与消费记录一并清除且不可恢复。目前的办理渠道是本项目的
-          GitHub Issues（<span class="eula-mono">github.com/ReQiao/give-command-generator</span>）。
+          GitHub Issues（<span class="eula-mono">github.com/ReQiao/soul-lantern</span>）。
         </p>
         <p>
           <strong>未成年人</strong>：如果你未满 14 周岁，请在监护人陪同下阅读本协议，
