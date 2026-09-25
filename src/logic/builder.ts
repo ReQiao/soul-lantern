@@ -283,7 +283,11 @@ export function createDefaultForm(): GiveForm {
 export function normalizeForm(value: unknown): GiveForm {
   const fallback = createDefaultForm();
   if (!value || typeof value !== "object") return fallback;
-  const data = value as Partial<GiveForm>;
+  // schemaVersion 是存盘格式的元数据，不是表单的一部分，别让它混进 form 里
+  // （混进去之后撤销快照、自动保存都会带着它到处跑）。
+  const { schemaVersion: _schemaVersion, ...data } = value as Partial<GiveForm> & {
+    schemaVersion?: unknown;
+  };
 
   return {
     ...fallback,
@@ -311,6 +315,60 @@ export function normalizeForm(value: unknown): GiveForm {
     lore: Array.isArray(data.lore) ? data.lore : [],
     customData: typeof data.customData === "string" ? data.customData : fallback.customData,
   };
+}
+
+/**
+ * 存盘的表单 JSON（模板文件、万灯集手动模板、自动保存）的格式版本。
+ *
+ * 【为什么现在就加】这份 JSON 会离开这台电脑：存成文件发给别人、发到万灯集
+ * 被陌生人下载。以后格式一定会变（多指令要把单个表单变成数组；多语言要把
+ * 「开启」「不设置」这类中文值换成 ID）——到那时候新版软件必须分得清手上这份
+ * 是哪一版格式的，才能正确迁移。没有版本号就只能靠猜，猜错了就是把别人的
+ * 模板读坏。
+ *
+ * 加版本号之前存下来的 JSON 没有这个字段，按 1 处理（格式和 1 完全一样）。
+ * 以后改格式：把这里 +1，然后在 `parseStoredForm` 里按旧版本号逐级迁移。
+ */
+export const TEMPLATE_SCHEMA_VERSION = 1;
+
+/** 模板是更新版本的软件存的，这个版本读不懂。单独一个类型，调用方好给出准确的提示。 */
+export class NewerTemplateError extends Error {
+  constructor(version: number) {
+    super(
+      `这份模板是用更新版本的灵魂灯笼保存的（格式版本 ${version}，当前软件只认到 ${TEMPLATE_SCHEMA_VERSION}），` +
+        "请先升级软件再打开。",
+    );
+    this.name = "NewerTemplateError";
+  }
+}
+
+/** 把表单存成带版本号的 JSON。所有会被存下来或发出去的表单都走这里。 */
+export function serializeForm(form: GiveForm, space?: number): string {
+  const { schemaVersion: _drop, ...rest } = form as GiveForm & { schemaVersion?: unknown };
+  return JSON.stringify({ schemaVersion: TEMPLATE_SCHEMA_VERSION, ...rest }, null, space);
+}
+
+/**
+ * 读一份存下来的表单 JSON（已经 `JSON.parse` 过的对象）。
+ *
+ * 比当前软件新的格式直接抛 `NewerTemplateError`——**不要**尝试"尽量读"：
+ * 新格式里某个字段换了含义，硬读出来就是一份看起来正常、实际错了的配置，
+ * 比报错糟糕得多。
+ */
+export function parseStoredForm(value: unknown): GiveForm {
+  if (value && typeof value === "object" && "schemaVersion" in value) {
+    const raw = (value as { schemaVersion: unknown }).schemaVersion;
+    const version = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isInteger(version) || version < 1) {
+      throw new Error(`模板的格式版本号无法识别：${String(raw)}`);
+    }
+    if (version > TEMPLATE_SCHEMA_VERSION) {
+      throw new NewerTemplateError(version);
+    }
+    // 以后格式变了，在这里按 version 逐级迁移，例如：
+    //   if (version < 2) value = migrateV1ToV2(value);
+  }
+  return normalizeForm(value);
 }
 
 interface ModernProfile {

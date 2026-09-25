@@ -3,7 +3,15 @@
  * Run: node src/logic/builder.test.mjs
  */
 
-import { createDefaultForm, buildGiveCommand, detectGiveVersionFromRaw } from "./builder.ts";
+import {
+  createDefaultForm,
+  buildGiveCommand,
+  detectGiveVersionFromRaw,
+  serializeForm,
+  parseStoredForm,
+  NewerTemplateError,
+  TEMPLATE_SCHEMA_VERSION,
+} from "./builder.ts";
 
 let passed = 0;
 let failed = 0;
@@ -687,6 +695,50 @@ console.log("\n[detectGiveVersionFromRaw]");
   expect("空字符串识别不出", detectGiveVersionFromRaw(""), null);
   expect("乱写的字符串识别不出", detectGiveVersionFromRaw("not-a-version"), null);
   expect("1.19 太老，识别不出", detectGiveVersionFromRaw("1.19"), null);
+}
+
+// --- 模板格式版本号 ---
+{
+  console.log("模板格式版本号");
+  const f = createDefaultForm();
+  f.item = "minecraft:diamond_sword";
+  f.count = 3;
+  f.templateName = "测试模板";
+
+  const saved = JSON.parse(serializeForm(f));
+  expect("存下来带版本号", saved.schemaVersion, TEMPLATE_SCHEMA_VERSION);
+  expect("版本号写在最前面（人肉打开文件一眼能看到）", Object.keys(saved)[0], "schemaVersion");
+
+  const back = parseStoredForm(saved);
+  expect("读回来内容不变", JSON.stringify(back), JSON.stringify(parseStoredForm(JSON.parse(JSON.stringify(f)))));
+  expect("读回来的表单里没有 schemaVersion", "schemaVersion" in back, false);
+  expect("读回来 item", back.item, "minecraft:diamond_sword");
+  expect("读回来 count", back.count, 3);
+
+  // 加版本号之前存的老模板：没有这个字段，按 1 读
+  const legacy = JSON.parse(JSON.stringify(f));
+  expect("老模板（无版本号）照常读", parseStoredForm(legacy).item, "minecraft:diamond_sword");
+
+  // 反复存读不会叠加版本号
+  const twice = JSON.parse(serializeForm(parseStoredForm(saved)));
+  expect("存读两轮版本号仍是单个数字", twice.schemaVersion, TEMPLATE_SCHEMA_VERSION);
+
+  let newerError = null;
+  try {
+    parseStoredForm({ ...saved, schemaVersion: TEMPLATE_SCHEMA_VERSION + 1 });
+  } catch (e) {
+    newerError = e;
+  }
+  expect("更新版本的模板抛 NewerTemplateError", newerError instanceof NewerTemplateError, true);
+  expect("提示里说要升级软件", String(newerError?.message).includes("升级"), true);
+
+  let badError = null;
+  try {
+    parseStoredForm({ ...saved, schemaVersion: "abc" });
+  } catch (e) {
+    badError = e;
+  }
+  expect("乱写的版本号报错而不是瞎读", badError instanceof Error, true);
 }
 
 // --- summary ---

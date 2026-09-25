@@ -61,7 +61,10 @@ import {
   isJava1212Family,
   getModernProfile,
   normalizeForm,
+  NewerTemplateError,
   pairText,
+  parseStoredForm,
+  serializeForm,
   type AttributeRow,
   type BlockLimitRow,
   type EnchantRow,
@@ -403,7 +406,7 @@ watch(
 
 const autosaveTimer = window.setInterval(() => {
   if (!dirty.value) return;
-  localStorage.setItem(autosaveKey, JSON.stringify(form));
+  localStorage.setItem(autosaveKey, serializeForm(form));
   dirty.value = false;
   status.value = "状态：已自动保存";
 }, 1000);
@@ -570,7 +573,7 @@ function loadAutosave(): GiveForm {
   const saved = localStorage.getItem(autosaveKey);
   if (!saved) return createDefaultForm();
   try {
-    const form = normalizeForm(JSON.parse(saved));
+    const form = parseStoredForm(JSON.parse(saved));
     status.value = "状态：已恢复上次内容";
     return form;
   } catch {
@@ -697,7 +700,7 @@ function pruneUnsupportedOptionsForVersion() {
 }
 
 function applyFormData(value: unknown) {
-  Object.assign(form, normalizeForm(value));
+  Object.assign(form, parseStoredForm(value));
   pruneUnsupportedOptionsForVersion();
   refreshPreviewIfGenerated();
 }
@@ -714,7 +717,7 @@ async function copy() {
 }
 
 async function saveTemplate() {
-  const payload = JSON.stringify(form, null, 2);
+  const payload = serializeForm(form, 2);
   const filename = `${(form.templateName.trim() || "未命名模板").replace(/[\\/:*?"<>|]/g, "_")}.json`;
 
   if (isTauri()) {
@@ -784,11 +787,12 @@ function useManualTemplate(payload: string, title: string) {
     status.value = `状态：已载入万灯集模板 ${title}`;
     showToast(`已载入「${title}」`);
   } catch (err) {
-    showMessage(
-      "这份模板载入失败",
-      `内容不是有效的表单数据：${err instanceof Error ? err.message : String(err)}`,
-      true,
-    );
+    // 版本太新不是"内容坏了"，是该升级软件了——两种情况给两句不同的话。
+    const message =
+      err instanceof NewerTemplateError
+        ? err.message
+        : `内容不是有效的表单数据：${err instanceof Error ? err.message : String(err)}`;
+    showMessage("这份模板载入失败", message, true);
   }
 }
 
@@ -1124,7 +1128,7 @@ function textOptions(items: string[]): SelectOption[] {
          切换决定，这边不该替用户决定"发布的时候到底是哪一份"。 -->
     <PlazaPanel
       v-if="mode === 'plaza'"
-      :manual-payload="JSON.stringify(form)"
+      :manual-payload="serializeForm(form)"
       :ai-payload="aiPanelRef?.userText ?? ''"
       :default-kind="lastContentMode"
       @use-manual="useManualFromPlaza"
