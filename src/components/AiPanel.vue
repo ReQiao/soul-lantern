@@ -17,6 +17,7 @@ import type { GiveVersion } from "../logic/builder";
 // App.vue 的模式切换按钮上，两处各存一份 ref 会立刻不同步。
 import {
   auth,
+  contextRounds,
   desktop,
   displayName,
   gated,
@@ -315,11 +316,20 @@ const failures = ref<string[]>([]);
 
 /**
  * 多轮上下文：允许"在上一次生成结果基础上继续修改"（比如"改成用箭"），
- * 而不用重新把整句需求描述一遍。封顶3轮是刻意的——通义千问上下文有限，
- * 轮数越多越容易跑偏/幻觉，而且接口是无状态的，每轮都要把历史重新整个
- * 发一遍，轮数越多单次调用费的 token 越多，3轮是防幻觉和控成本的折中。
+ * 而不用重新把整句需求描述一遍。要封顶——轮数越多越容易跑偏/幻觉，而且接口是
+ * 无状态的，每轮都要把历史重新整个发一遍，轮数越多单次调用费的 token 越多。
+ *
+ * 上限由服务端下发（/v1/version，可按模型分别配，长上下文模型可以给得更多），
+ * 服务端也会按同一个数裁剪 history，所以这里只决定界面何时提示"开始新对话"。
+ * 拿不到（老服务端 / 连不上）就退回 3。
  */
-const MAX_CONTEXT_ROUNDS = 3;
+const FALLBACK_CONTEXT_ROUNDS = 3;
+const maxContextRounds = computed(() => {
+  const cfg = contextRounds.value;
+  if (!cfg) return FALLBACK_CONTEXT_ROUNDS;
+  const model = apiModel.value.trim();
+  return (model && cfg.modelRounds[model]) || cfg.defaultRounds || FALLBACK_CONTEXT_ROUNDS;
+});
 interface ChatTurn {
   role: "user" | "assistant";
   content: string;
@@ -361,9 +371,9 @@ async function generate() {
   if (!canGenerate.value) return;
 
   // 已经聊满3轮：这一次不再带历史，直接当新对话处理，而不是拒绝用户的请求。
-  if (round.value >= MAX_CONTEXT_ROUNDS) {
+  if (round.value >= maxContextRounds.value) {
     history.value = [];
-    emit("toast", `已达到连续对话上限（${MAX_CONTEXT_ROUNDS}轮），这次将开始新的对话`);
+    emit("toast", `已达到连续对话上限（${maxContextRounds.value}轮），这次将开始新的对话`);
   }
 
   busy.value = true;
@@ -579,7 +589,7 @@ defineExpose({ userText, usePrompt });
 
     <div v-if="isContinuing" class="ai-context-bar">
       <span>
-        继续对话中（{{ round }}/{{ MAX_CONTEXT_ROUNDS }} 轮）
+        继续对话中（{{ round }}/{{ maxContextRounds }} 轮）
         <InfoTip text="接下来生成会带上前面几轮的对话，可以直接说「改成用箭」这种追问式修改。超过3轮后会自动开始新对话（防止上下文太长跑偏、也控制费用）。" />
       </span>
       <button type="button" class="ai-new-chat" @click="newConversation">开始新对话</button>

@@ -105,6 +105,17 @@ export const authRequired = ref(false);
 export const smsSignName = ref<string | null>(null);
 
 /**
+ * AI 连续对话轮数，服务端下发。`defaultRounds` 用于没选模型（走服务端默认模型）时，
+ * `modelRounds` 是各模型各自的值。拿不到（老服务端 / 连不上）就是 null，
+ * AiPanel 退回内置的 3——服务端本来也会按自己的配置裁剪历史，这里只管界面显示。
+ */
+export interface ContextRounds {
+  defaultRounds: number;
+  modelRounds: Record<string, number>;
+}
+export const contextRounds = ref<ContextRounds | null>(null);
+
+/**
  * 测试开关：`localStorage` 里 `soul-lantern-gate` = "on" 时强制进入门禁状态。
  *
  * 门禁真正生效需要三件事同时成立：跑在 Tauri 里、服务端说要登录、当前没登录。
@@ -195,6 +206,11 @@ export async function refreshAuthRequired() {
     smsSignName.value = await invoke<string | null>("auth_sms_sign_name");
   } catch {
     smsSignName.value = null;
+  }
+  try {
+    contextRounds.value = await invoke<ContextRounds | null>("auth_context_rounds");
+  } catch {
+    contextRounds.value = null;
   }
 }
 

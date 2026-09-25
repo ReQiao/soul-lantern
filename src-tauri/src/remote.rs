@@ -233,6 +233,12 @@ pub struct VersionView {
     /// 短信签名。老服务端不发，所以是可选的。
     #[serde(default)]
     pub sms_sign_name: Option<String>,
+    /// AI 连续对话轮数（服务端默认模型）。老服务端不发 → None，界面退回内置的 3。
+    #[serde(default)]
+    pub max_context_rounds: Option<u32>,
+    /// 各模型各自允许的轮数。老服务端不发 → 空表。
+    #[serde(default)]
+    pub model_context_rounds: std::collections::HashMap<String, u32>,
 }
 
 pub async fn register_begin(username: &str, password: &str, phone: &str) -> Result<CodeSentView, String> {

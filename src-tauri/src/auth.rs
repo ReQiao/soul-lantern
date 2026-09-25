@@ -118,6 +118,27 @@ pub async fn auth_sms_sign_name() -> Result<Option<String>, ()> {
     Ok(remote::server_version().await.ok().and_then(|v| v.sms_sign_name))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextRoundsView {
+    pub default_rounds: u32,
+    pub model_rounds: std::collections::HashMap<String, u32>,
+}
+
+/// AI 连续对话轮数，服务端下发。
+///
+/// 连不上服务器、或服务端太老不发这个字段，都返回 None——界面退回内置默认值，
+/// 不该因为这个多弹一个错。（服务端那边本来也会按它自己的配置裁剪历史，
+/// 这里拿不到只影响界面上"第几轮 / 共几轮"的显示和自动开新对话的时机。）
+#[tauri::command]
+pub async fn auth_context_rounds() -> Result<Option<ContextRoundsView>, ()> {
+    let Ok(v) = remote::server_version().await else { return Ok(None) };
+    Ok(v.max_context_rounds.map(|default_rounds| ContextRoundsView {
+        default_rounds,
+        model_rounds: v.model_context_rounds,
+    }))
+}
+
 /// 服务端认为客户端太旧时给出的升级提示；不需要升级就是 None。
 ///
 /// **说清楚它救不了谁**：这段代码是随新版客户端一起分发的，所以它对
