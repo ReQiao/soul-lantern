@@ -429,12 +429,15 @@ pub async fn plaza_favorite(id: &str) -> Result<serde_json::Value, String> {
 
 /// 记一次下载。失败不该挡住用户真正的动作（内容详情里已经拿到了），
 /// 所以调用方通常忽略它的错误。
+///
+/// 登录了就带上凭据：服务端现在**只给登录用户计数、每人每作品只算一次**
+/// （防刷）。不带的话服务端照样返回 200，但这次下载不会被计进去。
 pub async fn plaza_download(id: &str) -> Result<serde_json::Value, String> {
-    let resp = client()
-        .post(format!("{}/v1/plaza/works/{id}/download", server_base()))
-        .send()
-        .await
-        .map_err(describe_connect_err)?;
+    let mut req = client().post(format!("{}/v1/plaza/works/{id}/download", server_base()));
+    if let Some(t) = session::token() {
+        req = req.bearer_auth(t);
+    }
+    let resp = req.send().await.map_err(describe_connect_err)?;
     parse_json(resp).await
 }
 
