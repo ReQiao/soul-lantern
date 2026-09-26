@@ -8,8 +8,8 @@
 //!
 //! 走的是自签名证书 + 客户端证书锁定，不是公共 CA——服务器部署在国内裸 IP
 //! 机房，没有域名/备案。`tls_built_in_root_certs(false)` + `add_root_certificate`
-//! 这个组合是真正意义上的锁定："只信任这一张，其它一律拒绝"，不是"额外多
-//! 信任一个"；已经用真实 TLS 握手验证过这个组合能正确工作
+//! 这个组合是真正意义上的锁定："只信任内置的这几张（主证书 + 离线备用证书），
+//! 其它一律拒绝"，不是"额外多信任几个"；已经用真实 TLS 握手验证过这个组合能正确工作
 //! （见 server/tests/tls_pinning.rs）。
 
 use crate::ai::{AiUsage, ChatTurn};
@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 /// （这是设计如此——对不上就该拒绝，不能悄悄放行）。
 const SERVER_BASE: &str = "https://120.26.175.121:8443";
 
-/// 测试逃生舱，同 `pinned_cert_pem`：设了这个环境变量就用它代替内置地址，
+/// 测试逃生舱，同 `pinned_certs_pem`：设了这个环境变量就用它代替内置地址，
 /// 让 tests/ 下的集成测试能指向本地起的临时测试服务器，而不必连生产地址。
 fn server_base() -> String {
     std::env::var("SOUL_LANTERN_SERVER_BASE").unwrap_or_else(|_| SERVER_BASE.to_string())
@@ -30,7 +30,7 @@ fn server_base() -> String {
 /// 锁定的证书公钥（PEM），来自服务器上 generate.sh 现场生成的 server.crt
 /// （私钥留在服务器上，从未经过这里）。已核对 SAN 是 IP:120.26.175.121、
 /// basicConstraints 是 CA:FALSE（不是早前踩过的 CaUsedAsEndEntity 那个坑）。
-const PINNED_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+const PRIMARY_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
 MIIBvTCCAWKgAwIBAgIUVhcCDUQFkiyA4NZdNFAz+LmngucwCgYIKoZIzj0EAwIw
 GTEXMBUGA1UEAwwOMTIwLjI2LjE3NS4xMjEwHhcNMjYwODEwMTIxNTAyWhcNNDYw
 ODA1MTIxNTAyWjAZMRcwFQYDVQQDDA4xMjAuMjYuMTc1LjEyMTBZMBMGByqGSM49
@@ -43,15 +43,41 @@ AGZkXgptheFQ73NyscnWdNew9Pv5CJW5IXAqndn0AiEA+Bo5zYfdCNEPw62aMkrH
 qXn++VziEGlP1US9zfaXJw0=
 -----END CERTIFICATE-----"#;
 
+/// 备用证书。**平时服务器上不用它**，私钥离线保管、不在服务器上也不在任何仓库里。
+///
+/// 存在的理由：这个客户端没有自动更新，锁定的证书一换，所有已发出去的客户端
+/// 立刻全部失联。只锁一张的话，主证书私钥一旦泄露或丢失（服务器被入侵、磁盘坏、
+/// 误删），唯一的办法就是发新客户端、等所有人重装。预先把第二张也编进来，
+/// 出事时服务器把 TLS_CERT/TLS_KEY 换成这一对，老客户端照样能连。
+///
+/// 同样核对过 SAN=IP:120.26.175.121、CA:FALSE，有效期到 2046-09。
+/// SHA-256 指纹 3A:0D:5D:0A:…:DA:04:EE（完整值见服务端仓库 deploy/CONFIG.md）。
+const BACKUP_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBvDCCAWKgAwIBAgIUJG6uDWaQijLSyhzOKdDaDyoEwLswCgYIKoZIzj0EAwIw
+GTEXMBUGA1UEAwwOMTIwLjI2LjE3NS4xMjEwHhcNMjYwOTI2MDQyMTAyWhcNNDYw
+OTIxMDQyMTAyWjAZMRcwFQYDVQQDDA4xMjAuMjYuMTc1LjEyMTBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABMk9XfjkccdigAKNH70538mbyOe9hU8899PVbvnlnvYy
+2ns+7/PffkvDBfpRzcme5Uod0sy1RVdOKEx1XMuvS+GjgYcwgYQwHQYDVR0OBBYE
+FK7H8gNR9JjGdxB+w9bafhGh5/XaMB8GA1UdIwQYMBaAFK7H8gNR9JjGdxB+w9ba
+fhGh5/XaMA8GA1UdEQQIMAaHBHgar3kwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8E
+BAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYIKoZIzj0EAwIDSAAwRQIhAOGM
+atS8VBxIbmiRLaD3jsKABJ2/Sal88Z6AEreh+bwlAiBsvyAyY3pRAvmuHlZMbkXN
+d285d8hoxFnf1Jfpvddp9A==
+-----END CERTIFICATE-----"#;
+
+/// 客户端信任的全部证书。服务器出示其中**任意一张**都能握手，其它一律拒绝。
+const PINNED_CERT_PEMS: [&str; 2] = [PRIMARY_CERT_PEM, BACKUP_CERT_PEM];
+
 /// 测试 / 联调用的逃生舱：设了这个环境变量就读文件内容代替内置的
-/// `PINNED_CERT_PEM`，正常发布的客户端不会设这个变量，走的还是编译进去的
-/// 那份。这里存在的唯一理由是 tests/ 下的集成测试要用一张现场生成的临时
+/// `PINNED_CERT_PEMS`，正常发布的客户端不会设这个变量，走的还是编译进去的
+/// 那几份。这里存在的唯一理由是 tests/ 下的集成测试要用一张现场生成的临时
 /// 证书验证整条链路，不能也不该为了测试去改动打包进正式客户端的那个常量。
-fn pinned_cert_pem() -> String {
+/// 文件里可以放多张证书（直接首尾拼接），和内置的多张一样对待。
+fn pinned_certs_pem() -> String {
     std::env::var("SOUL_LANTERN_PINNED_CERT_FILE")
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .unwrap_or_else(|| PINNED_CERT_PEM.to_string())
+        .unwrap_or_else(|| PINNED_CERT_PEMS.join("\n"))
 }
 
 fn client() -> &'static reqwest::Client {
@@ -62,15 +88,17 @@ fn client() -> &'static reqwest::Client {
         // 见 server/src/main.rs 的同一行注释）。重复调用不会报错，忽略返回值。
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let cert = reqwest::Certificate::from_pem(pinned_cert_pem().as_bytes())
-            .expect("内置证书 PEM 解析失败——多半是占位符还没换成真实证书内容");
+        let certs = reqwest::Certificate::from_pem_bundle(pinned_certs_pem().as_bytes())
+            .expect("内置证书 PEM 解析失败——多半是粘贴时手滑改坏了");
+        assert!(!certs.is_empty(), "没有任何可信证书");
 
-        reqwest::Client::builder()
-            .tls_built_in_root_certs(false) // 只信任下面这一张，不信任系统公共信任链
-            .add_root_certificate(cert)
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .expect("构建 HTTPS 客户端失败")
+        let mut builder = reqwest::Client::builder()
+            .tls_built_in_root_certs(false) // 只信任下面这几张，不信任系统公共信任链
+            .timeout(std::time::Duration::from_secs(60));
+        for cert in certs {
+            builder = builder.add_root_certificate(cert);
+        }
+        builder.build().expect("构建 HTTPS 客户端失败")
     })
 }
 
@@ -566,26 +594,27 @@ mod tests {
 
     /// 防的是"占位符忘了换成真实证书"或者"贴的时候手滑改坏了"这两种情况——
     /// 光靠人眼看 PEM 那一长串 base64 是看不出来对不对的，跑这条测试
-    /// 至少能保证它现在是一份能被 reqwest 正常解析的合法证书。
+    /// 至少能保证每一张都是能被 reqwest 正常解析的合法证书。
     #[test]
-    fn pinned_cert_is_a_valid_parseable_certificate() {
-        reqwest::Certificate::from_pem(PINNED_CERT_PEM.as_bytes())
-            .expect("PINNED_CERT_PEM 应该是一份合法证书——是不是还是占位符，或者粘贴时手滑改坏了？");
+    fn pinned_certs_are_valid_parseable_certificates() {
+        for (i, pem) in PINNED_CERT_PEMS.iter().enumerate() {
+            reqwest::Certificate::from_pem(pem.as_bytes())
+                .unwrap_or_else(|e| panic!("第 {i} 张锁定证书解析失败，是不是粘贴时手滑改坏了：{e}"));
+        }
+        // 拼接后整包解析必须拿到同样多张——client() 走的是这条路径
+        let bundle = reqwest::Certificate::from_pem_bundle(PINNED_CERT_PEMS.join("\n").as_bytes()).unwrap();
+        assert_eq!(bundle.len(), PINNED_CERT_PEMS.len());
     }
 
     /// 证书内容长度做个粗筛：早前的占位符字符串远比一份真实证书短。
     /// SERVER_BASE 打的地址和证书 SAN 是否匹配这件事，靠的是
-    /// tests/remote_integration.rs 那条真实 TLS 握手的集成测试来验证——
-    /// 单测这里只检查"这不再是那句占位符英文"这种低成本但有效的粗筛。
+    /// tests/remote_integration.rs 那条真实 TLS 握手的集成测试来验证。
     #[test]
-    fn pinned_cert_is_not_the_placeholder() {
-        assert!(
-            PINNED_CERT_PEM.len() > 200,
-            "证书内容看起来太短，多半还是占位符没换成真实证书"
-        );
-        assert!(
-            !PINNED_CERT_PEM.contains("REPLACE_WITH_REAL"),
-            "PINNED_CERT_PEM 还是占位符文本，没有换成真实证书内容"
-        );
+    fn pinned_certs_are_not_placeholders_and_distinct() {
+        for pem in PINNED_CERT_PEMS {
+            assert!(pem.len() > 200, "证书内容看起来太短，多半还是占位符没换成真实证书");
+            assert!(!pem.contains("REPLACE_WITH_REAL"), "还是占位符文本，没有换成真实证书内容");
+        }
+        assert_ne!(PRIMARY_CERT_PEM, BACKUP_CERT_PEM, "备用证书和主证书是同一张，等于没备");
     }
 }

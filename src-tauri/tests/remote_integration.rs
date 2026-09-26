@@ -219,8 +219,21 @@ async fn full_client_flow_against_real_server() {
 
     // Rust 2024 里改环境变量是 unsafe（进程全局可变状态）。这个文件只有一个
     // 测试函数、不会并行跑，这里是安全的。
+    // 锁定的是"一张不相干的证书 + 服务器真正出示的那张"拼成的包，而且真证书
+    // 故意放在**第二张**——这正是正式客户端里备用证书的处境（remote.rs 的
+    // PINNED_CERT_PEMS）：服务器换成备用证书之后，客户端得认得出包里后面那张。
+    let decoy_dir = dir.join("decoy");
+    std::fs::create_dir_all(&decoy_dir).unwrap();
+    let (decoy_crt, _) = generate_cert(&decoy_dir, "127.0.0.1");
+    let bundle = dir.join("pinned-bundle.crt");
+    std::fs::write(
+        &bundle,
+        std::fs::read_to_string(&decoy_crt).unwrap() + &std::fs::read_to_string(&crt).unwrap(),
+    )
+    .unwrap();
+
     unsafe {
-        std::env::set_var("SOUL_LANTERN_PINNED_CERT_FILE", &crt);
+        std::env::set_var("SOUL_LANTERN_PINNED_CERT_FILE", &bundle);
         std::env::set_var("SOUL_LANTERN_SERVER_BASE", format!("https://127.0.0.1:{bind_port}"));
         // session.rs 会往 dirs::config_dir() 写会话文件。不隔离的话测试会污染
         // 跑测试这台机器上真实用户的登录状态。
