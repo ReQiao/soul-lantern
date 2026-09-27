@@ -147,6 +147,15 @@ interface TopupTier {
   yuan: number;
   coins: number;
 }
+/**
+ * 充值 / 激活码开没开。测试阶段两者都关：服务端的免费充值口默认不注册，
+ * 档位点了只会报错；激活码也还没开始卖。关着时充值档位整块隐藏，激活码框
+ * 保留但禁用、写明原因——比藏起来更好，用户知道以后是从这里兑换的。
+ * 正式开卖时改成 true。
+ */
+const BILLING_OPEN = false;
+const BILLING_CLOSED_TEXT = "AI 模式正在测试中，无法激活";
+
 const balance = ref<number | null>(null);
 const topupTiers = ref<TopupTier[]>([]);
 const showTopup = ref(false);
@@ -216,7 +225,7 @@ const activating = ref(false);
 
 async function activate() {
   const key = licenseKey.value.trim();
-  if (!key || activating.value) return;
+  if (!BILLING_OPEN || !key || activating.value) return;
   activating.value = true;
   try {
     const st = await invoke<AccountView>("billing_activate", { licenseKey: key });
@@ -662,8 +671,8 @@ defineExpose({ userText, usePrompt });
     </div>
 
     <div v-if="showTopup" class="ai-topup-panel">
-      <p class="ai-topup-note">当前是免费测试阶段，点击即可直接到账，不会真的扣款。</p>
-      <div class="ai-topup-tiers">
+      <p v-if="BILLING_OPEN" class="ai-topup-note">当前是免费测试阶段，点击即可直接到账，不会真的扣款。</p>
+      <div v-if="BILLING_OPEN" class="ai-topup-tiers">
         <button
           v-for="tier in topupTiers"
           :key="tier.coins"
@@ -676,7 +685,7 @@ defineExpose({ userText, usePrompt });
         </button>
       </div>
 
-      <div class="ai-license">
+      <div class="ai-license" :class="{ solo: !BILLING_OPEN }">
         <span class="field-label">
           激活码
           <InfoTip text="在外部渠道购买后拿到的激活码，格式 SOUL-XXXX-XXXX-XXXX。同一个码只能兑换一次。" />
@@ -684,12 +693,13 @@ defineExpose({ userText, usePrompt });
         <div class="ai-license-row">
           <input
             v-model="licenseKey"
-            placeholder="SOUL-XXXX-XXXX-XXXX"
+            :placeholder="BILLING_OPEN ? 'SOUL-XXXX-XXXX-XXXX' : BILLING_CLOSED_TEXT"
+            :disabled="!BILLING_OPEN"
             autocomplete="off"
             spellcheck="false"
             @keydown.enter="activate"
           />
-          <button type="button" :disabled="!licenseKey.trim() || activating" @click="activate">
+          <button type="button" :disabled="!BILLING_OPEN || !licenseKey.trim() || activating" @click="activate">
             {{ activating ? "兑换中…" : "兑换" }}
           </button>
         </div>

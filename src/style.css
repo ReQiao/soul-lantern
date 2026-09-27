@@ -2236,6 +2236,12 @@ button#primary,
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* 充值档位隐藏时激活码是面板里唯一的东西，上面那条分隔线就多余了 */
+.ai-license.solo {
+  padding-top: 0;
+  border-top: none;
+}
+
 .ai-license-row {
   display: flex;
   gap: 8px;
