@@ -93,8 +93,17 @@ fn client() -> &'static reqwest::Client {
             .expect("内置证书 PEM 解析失败——多半是粘贴时手滑改坏了");
         assert!(!certs.is_empty(), "没有任何可信证书");
 
+        // 每个请求都带上客户端版本号：服务端低于 MIN_CLIENT 的一律 426（见服务端
+        // client_version_gate）。这防不住故意改版本号的人，挡的是正常用着老版本的人。
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-Client-Version",
+            reqwest::header::HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+        );
+
         let mut builder = reqwest::Client::builder()
             .tls_built_in_root_certs(false) // 只信任下面这几张，不信任系统公共信任链
+            .default_headers(headers)
             .timeout(std::time::Duration::from_secs(60));
         for cert in certs {
             builder = builder.add_root_certificate(cert);
@@ -268,6 +277,9 @@ pub struct VersionView {
     /// 各模型各自允许的轮数。老服务端不发 → 空表。
     #[serde(default)]
     pub model_context_rounds: std::collections::HashMap<String, u32>,
+    /// 测试版「自带 API key」开着没有。老服务端不发 → false。
+    #[serde(default)]
+    pub byok_enabled: bool,
 }
 
 pub async fn register_begin(username: &str, password: &str, phone: &str) -> Result<CodeSentView, String> {
@@ -586,6 +598,31 @@ pub async fn ai_generate(
         .send()
         .await
         .map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+// ---------------------------------------------------------------- 测试版：自带 API key
+
+#[derive(Serialize)]
+struct ByokBuildReq<'a> {
+    content: &'a str,
+    version: &'a str,
+}
+
+/// 把用户自己的 key 调出来的 AI 输出交给服务端构建器转成指令。不扣费。
+/// 返回的形状和 `ai_generate` 完全一样（服务端两条路共用同一个构建函数）。
+pub async fn byok_build(content: &str, version: &str) -> Result<AiGenerateResp, String> {
+    let token = bearer()?;
+    let resp = client()
+        .post(format!("{}/v1/byok/build", server_base()))
+        .bearer_auth(token)
+        .json(&ByokBuildReq { content, version })
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err("服务端已关闭「使用自己的 API key」功能。".to_string());
+    }
     parse_json(resp).await
 }
 

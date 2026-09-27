@@ -2248,6 +2248,50 @@ button#primary,
   letter-spacing: 0.5px;
 }
 
+/* ---- 【测试版】使用自己的 API key ---- */
+.ai-byok {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-byok-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9pt;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.ai-byok-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.ai-byok-grid input {
+  min-width: 0;
+}
+
+.ai-byok-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-byok-using {
+  font-size: 9pt;
+  color: var(--muted, #93a4c8);
+}
+
+@media (max-width: 520px) {
+  .ai-byok-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ai-head {
   display: flex;
   align-items: center;

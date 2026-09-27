@@ -139,6 +139,12 @@ pub async fn auth_context_rounds() -> Result<Option<ContextRoundsView>, ()> {
     }))
 }
 
+/// 服务端开没开测试版「自带 API key」。连不上 / 老服务端就是 false，界面不显示那个选项。
+#[tauri::command]
+pub async fn auth_byok_enabled() -> Result<bool, ()> {
+    Ok(remote::server_version().await.map(|v| v.byok_enabled).unwrap_or(false))
+}
+
 /// 服务端认为客户端太旧时给出的升级提示；不需要升级就是 None。
 ///
 /// **说清楚它救不了谁**：这段代码是随新版客户端一起分发的，所以它对

@@ -4,6 +4,7 @@ pub mod admin;
 pub mod ai;
 pub mod auth;
 pub mod billing;
+pub mod byok;
 mod datapack;
 pub mod plaza;
 pub mod remote;
@@ -22,6 +23,7 @@ pub fn run() {
             auth::auth_required,
             auth::auth_sms_sign_name,
             auth::auth_context_rounds,
+            auth::auth_byok_enabled,
             auth::auth_upgrade_notice,
             auth::auth_register_begin,
             auth::auth_register_resend,
@@ -37,6 +39,11 @@ pub fn run() {
             billing::billing_activate,
             billing::billing_topup_tiers,
             billing::billing_recharge,
+            byok::byok_get_config,
+            byok::byok_save_config,
+            byok::byok_clear_key,
+            byok::byok_test,
+            byok::byok_generate,
             datapack::datapack_list_saves,
             datapack::datapack_deploy,
             datapack::datapack_default_saves_dir,

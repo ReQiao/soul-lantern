@@ -27,7 +27,11 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # AI 调用。用 rustls 而非系统 openssl，免得各平台交叉编译时缺库。
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# system-proxy：读 Windows / macOS 的系统代理设置。测试版自带 key 调 OpenAI 这类
+# 国外接口要走代理（Clash 等开"系统代理"），不开这个特性 reqwest 只认环境变量。
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "system-proxy"] }
+# 测试版自带 key：加密后的 key 用 base64 存进配置文件（见 byok.rs）。
+base64 = "0.22"
 # 定位各平台的 .minecraft 目录
 dirs = "6"
 # 读 level.dat（gzip 压缩的 NBT）里的 Data.Version.Name，识别存档实际版本
@@ -46,3 +50,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # 运行时），只有测试需要自己拉一份。
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 
+# Windows 上用系统 DPAPI 加密用户自带的 API key（见 byok.rs）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

@@ -17,6 +17,7 @@ import type { GiveVersion } from "../logic/builder";
 // App.vue 的模式切换按钮上，两处各存一份 ref 会立刻不同步。
 import {
   auth,
+  byokEnabled,
   contextRounds,
   desktop,
   displayName,
@@ -287,6 +288,118 @@ const MODEL_OPTIONS = [
 ] as const;
 const apiModel = ref<string>("");
 
+// ---------------- 【测试版】使用自己的 API key ----------------
+//
+// 本地拿用户自己的 key 调用户自己的模型，只把 AI 输出交给服务端构建器（见
+// src-tauri/src/byok.rs）。key 从不经过我们的服务器。服务端 policy 里一键关，
+// 关掉之后 byokEnabled 是 false，这一整块都不显示，也不会走这条路。
+// 正式商业化时服务端关掉接口、这块代码一并删除。
+
+interface ByokConfig {
+  endpoint: string;
+  model: string;
+  hasKey: boolean;
+  keyHint: string;
+}
+
+const BYOK_PRESETS = [
+  { label: "OpenAI", value: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { label: "DeepSeek", value: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { label: "通义千问（百炼）", value: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { label: "自定义 / 中转", value: "", model: "" },
+] as const;
+
+const BYOK_TOGGLE_KEY = "soul-lantern-byok-on";
+function readByokToggle(): boolean {
+  try {
+    return localStorage.getItem(BYOK_TOGGLE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+const byokOn = ref(readByokToggle());
+watch(byokOn, (on) => {
+  try {
+    localStorage.setItem(BYOK_TOGGLE_KEY, on ? "1" : "0");
+  } catch {
+    // 存不下就每次重新勾，不影响功能
+  }
+});
+/** 真正走自带 key：服务端开着 + 用户勾了。服务端一关，勾没勾都回到付费通道。 */
+const usingByok = computed(() => byokEnabled.value && byokOn.value);
+
+const byokPreset = ref<string>("");
+const byokEndpoint = ref("");
+const byokModel = ref("");
+const byokKey = ref("");
+const byokSaved = ref<ByokConfig | null>(null);
+const byokStatus = ref("");
+const byokBusy = ref(false);
+
+watch(byokPreset, (v) => {
+  const preset = BYOK_PRESETS.find((p) => p.value === v);
+  if (!preset || !preset.value) return;
+  byokEndpoint.value = preset.value;
+  if (!byokModel.value.trim()) byokModel.value = preset.model;
+});
+
+async function loadByokConfig() {
+  if (!desktop) return;
+  try {
+    const cfg = await invoke<ByokConfig>("byok_get_config");
+    byokSaved.value = cfg;
+    byokEndpoint.value = cfg.endpoint;
+    byokModel.value = cfg.model;
+    byokPreset.value = BYOK_PRESETS.find((p) => p.value && p.value === cfg.endpoint)?.value ?? "";
+  } catch {
+    byokSaved.value = null;
+  }
+}
+
+async function saveByok() {
+  byokBusy.value = true;
+  byokStatus.value = "";
+  try {
+    byokSaved.value = await invoke<ByokConfig>("byok_save_config", {
+      endpoint: byokEndpoint.value,
+      model: byokModel.value,
+      key: byokKey.value.trim() || null,
+    });
+    byokEndpoint.value = byokSaved.value.endpoint;
+    byokKey.value = "";
+    byokStatus.value = "已保存（key 加密存在本机，不会上传）";
+  } catch (err) {
+    byokStatus.value = String(err);
+  } finally {
+    byokBusy.value = false;
+  }
+}
+
+async function testByok() {
+  byokBusy.value = true;
+  byokStatus.value = "测试中…";
+  try {
+    byokStatus.value = await invoke<string>("byok_test");
+  } catch (err) {
+    byokStatus.value = String(err);
+  } finally {
+    byokBusy.value = false;
+  }
+}
+
+async function clearByokKey() {
+  try {
+    byokSaved.value = await invoke<ByokConfig>("byok_clear_key");
+    byokStatus.value = "已删除本机保存的 key";
+  } catch (err) {
+    byokStatus.value = String(err);
+  }
+}
+
+watch(byokEnabled, (on) => {
+  if (on) void loadByokConfig();
+}, { immediate: true });
+
 const userText = ref("");
 
 /**
@@ -357,7 +470,13 @@ function newConversation() {
 const bedrockUnsupported = computed(() => props.version === "bedrock");
 
 const canGenerate = computed(
-  () => desktop && !bedrockUnsupported.value && !busy.value && userText.value.trim().length > 0,
+  () =>
+    desktop &&
+    !bedrockUnsupported.value &&
+    !busy.value &&
+    userText.value.trim().length > 0 &&
+    // 自带 key 模式下没存 key 就别让点，点了也只会报"还没有填 API key"
+    (!usingByok.value || !!byokSaved.value?.hasKey),
 );
 
 const examples = [
@@ -386,13 +505,20 @@ async function generate() {
   const thisTurnText = userText.value.trim();
 
   try {
-    const res = await invoke<AiResponse>("ai_generate", {
-      systemPrompt: buildSystemPrompt(props.version),
-      userText: thisTurnText,
-      model: apiModel.value.trim() || null,
-      version: props.version,
-      history: history.value,
-    });
+    const res = usingByok.value
+      ? await invoke<AiResponse>("byok_generate", {
+          systemPrompt: buildSystemPrompt(props.version),
+          userText: thisTurnText,
+          version: props.version,
+          history: history.value,
+        })
+      : await invoke<AiResponse>("ai_generate", {
+          systemPrompt: buildSystemPrompt(props.version),
+          userText: thisTurnText,
+          model: apiModel.value.trim() || null,
+          version: props.version,
+          history: history.value,
+        });
 
     // 连不上服务器时 res.balance 是 null，不能拿它覆盖已经显示的余额——
     // 那会让用户误以为余额真的清零了，其实只是网络问题。
@@ -575,7 +701,11 @@ defineExpose({ userText, usePrompt });
         想要什么效果
         <InfoTip text="用大白话描述你想要的游戏内效果就行，不用管指令怎么写。例如「做一把能射 TNT 的弓」。" />
       </span>
-      <div class="ai-model-row">
+      <div v-if="usingByok" class="ai-model-row">
+        <span class="field-label">模型</span>
+        <span class="ai-byok-using">自己的 key · {{ byokSaved?.model || "未设置" }}</span>
+      </div>
+      <div v-else class="ai-model-row">
         <span class="field-label">
           模型
           <InfoTip text="不同模型价格/能力差很多：Plus 最稳，Long 性价比最高，Flash 和 DeepSeek 最便宜，Max 贵但能力更强。GLM-5.3 需要服务端接了对应网关才能用。拿不准就选「服务器默认」。" />
@@ -584,6 +714,42 @@ defineExpose({ userText, usePrompt });
           v-model="apiModel"
           :options="MODEL_OPTIONS as unknown as { label: string; value: string }[]"
         />
+      </div>
+    </div>
+
+    <div v-if="byokEnabled && desktop" class="ai-byok">
+      <label class="ai-byok-toggle">
+        <input v-model="byokOn" type="checkbox" />
+        使用自己的 API key（测试版）
+        <InfoTip text="用你自己的大模型 key 生成，不消耗灵魂币。key 加密保存在本机、直接从你的电脑发给模型接口，不经过我们的服务器（所以国外接口要开代理）。支持 OpenAI 格式的接口：OpenAI、DeepSeek、通义千问、各种中转。测试期间限时开放，正式版会关闭。" />
+      </label>
+
+      <div v-if="byokOn" class="ai-topup-panel ai-byok-panel">
+        <div class="ai-byok-grid">
+          <span class="field-label">服务商</span>
+          <CustomSelect
+            v-model="byokPreset"
+            :options="BYOK_PRESETS.map((p) => ({ label: p.label, value: p.value }))"
+          />
+          <span class="field-label">接口地址</span>
+          <input v-model="byokEndpoint" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off" />
+          <span class="field-label">模型名</span>
+          <input v-model="byokModel" placeholder="gpt-4o-mini" spellcheck="false" autocomplete="off" />
+          <span class="field-label">API key</span>
+          <input
+            v-model="byokKey"
+            type="password"
+            :placeholder="byokSaved?.hasKey ? `已保存 ${byokSaved.keyHint}，留空不修改` : 'sk-...'"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        <div class="ai-byok-actions">
+          <button type="button" :disabled="byokBusy" @click="saveByok">保存</button>
+          <button type="button" :disabled="byokBusy || !byokSaved?.hasKey" @click="testByok">测试连接</button>
+          <button type="button" :disabled="byokBusy || !byokSaved?.hasKey" @click="clearByokKey">删除 key</button>
+        </div>
+        <p v-if="byokStatus" class="ai-topup-note">{{ byokStatus }}</p>
       </div>
     </div>
 

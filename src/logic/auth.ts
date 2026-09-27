@@ -116,6 +116,12 @@ export interface ContextRounds {
 export const contextRounds = ref<ContextRounds | null>(null);
 
 /**
+ * 【测试版】服务端开没开「使用自己的 API key」。服务端在 policy 里一键关，
+ * 关掉之后这里是 false、AI 面板就不显示那个选项。
+ */
+export const byokEnabled = ref(false);
+
+/**
  * 测试开关：`localStorage` 里 `soul-lantern-gate` = "on" 时强制进入门禁状态。
  *
  * 门禁真正生效需要三件事同时成立：跑在 Tauri 里、服务端说要登录、当前没登录。
@@ -211,6 +217,11 @@ export async function refreshAuthRequired() {
     contextRounds.value = await invoke<ContextRounds | null>("auth_context_rounds");
   } catch {
     contextRounds.value = null;
+  }
+  try {
+    byokEnabled.value = await invoke<boolean>("auth_byok_enabled");
+  } catch {
+    byokEnabled.value = false;
   }
 }
 
