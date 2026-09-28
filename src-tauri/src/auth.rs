@@ -149,6 +149,32 @@ pub async fn auth_byok_enabled() -> Result<bool, ()> {
     Ok(remote::server_version().await.map(|v| v.byok_enabled).unwrap_or(false))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    /// 最新版的内部版本号（界面按它记「这个版本的提示关过了」）。
+    pub version: String,
+    /// 给人看的名字，比如 "5.0-rc2"。
+    pub display: String,
+    /// 下载页；服务端没配就是空，界面只提示不给按钮。
+    pub url: String,
+}
+
+/// 「有新版本」提示：服务端配的 LATEST_CLIENT 比自己新就返回，否则 None。
+///
+/// 和 `auth_upgrade_notice` 的分工：那个是「低于 MIN_CLIENT、已经被拦了」，
+/// 这个是「还能用，只是有新版」。连不上服务器 / 服务端没配都返回 None，不打扰。
+#[tauri::command]
+pub async fn auth_update_available() -> Result<Option<UpdateInfo>, ()> {
+    let Ok(v) = remote::server_version().await else { return Ok(None) };
+    let latest = v.latest_client.trim().to_string();
+    if latest.is_empty() || !version_older_than(env!("CARGO_PKG_VERSION"), &latest) {
+        return Ok(None);
+    }
+    let display = if v.latest_display.trim().is_empty() { latest.clone() } else { v.latest_display.trim().to_string() };
+    Ok(Some(UpdateInfo { version: latest, display, url: v.download_url.trim().to_string() }))
+}
+
 /// 服务端认为客户端太旧时给出的升级提示；不需要升级就是 None。
 ///
 /// **说清楚它救不了谁**：这段代码是随新版客户端一起分发的，所以它对

@@ -26,6 +26,7 @@ pub fn run() {
             auth::auth_context_rounds,
             auth::auth_byok_enabled,
             auth::auth_upgrade_notice,
+            auth::auth_update_available,
             auth::auth_register_begin,
             auth::auth_register_resend,
             auth::auth_register_verify,

@@ -22,6 +22,7 @@ import { useMorphPopup } from "./logic/morphPopup";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
 import { maybeSendSession, reportError } from "./logic/telemetry";
+import { DISPLAY_VERSION } from "./logic/version";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
 // 换图之后不会因为浏览器缓存显示旧的。
 import lanternUrl from "./assets/soul-lantern.png";
@@ -168,6 +169,58 @@ watch(
 // ---------------- 设置 ----------------
 const settingsOpen = ref(false);
 const settingsBtnEl = ref<HTMLElement | null>(null);
+
+// ---------------- 有新版本 ----------------
+//
+// 没有自动更新，测试期间会频繁发版。服务端 .env 里配 LATEST_CLIENT / LATEST_DISPLAY /
+// DOWNLOAD_URL，比自己新就在顶部提示一条（只提醒不拦截——拦截是 MIN_CLIENT 的事）。
+// 同一个版本关掉之后不再提示，出了更新的版本才再提示。
+interface UpdateInfo {
+  version: string;
+  display: string;
+  url: string;
+}
+const UPDATE_DISMISS_KEY = "soul-lantern-update-dismissed";
+const update = ref<UpdateInfo | null>(null);
+
+async function checkUpdate() {
+  if (!isTauri()) return;
+  try {
+    const info = await invoke<UpdateInfo | null>("auth_update_available");
+    if (!info) return;
+    let dismissed = "";
+    try {
+      dismissed = localStorage.getItem(UPDATE_DISMISS_KEY) ?? "";
+    } catch {
+      // 读不到就当没关过
+    }
+    if (dismissed !== info.version) update.value = info;
+  } catch {
+    // 检查失败不打扰
+  }
+}
+
+function dismissUpdate() {
+  if (update.value) {
+    try {
+      localStorage.setItem(UPDATE_DISMISS_KEY, update.value.version);
+    } catch {
+      // 存不下就下次启动再提示一次
+    }
+  }
+  update.value = null;
+}
+
+async function openUpdate() {
+  const url = update.value?.url;
+  if (!url) return;
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch {
+    showToast(`打不开链接，请手动访问：${url}`, 6000);
+  }
+}
 
 function acceptEula() {
   eulaAccepted.value = true;
@@ -617,6 +670,7 @@ onMounted(() => {
   // 登录态在这一层拉，不放 AiPanel 里：门禁判断发生在这儿的模式切换按钮上，
   // 拉取要早于用户可能点到「AI 模式」的那一刻。
   void recheckAuth();
+  void checkUpdate();
   // 液态玻璃：按选择器认领所有浮层，后来 v-if 挂上来的弹窗也会自动接管。
   // 不支持 SVG 滤镜的引擎（macOS 的 WKWebView）里它直接空转，交给 CSS 降级。
   // 灯的图片路径是 Vite 打过哈希的，CSS 写不出来，运行时注入给 .shell-frost 用。
@@ -1192,8 +1246,15 @@ function textOptions(items: string[]): SelectOption[] {
           type="button"
           class="settings-btn"
           aria-label="设置"
+          title="设置"
           @click="settingsOpen = true"
-        >设置</button>
+        >
+          <!-- 只放图标：顶部这一栏在默认窗口宽度下本来就挤，文字按钮会把右边工具条挤成竖排 -->
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
       </div>
       <!--
         两套顶部工具条一直同时挂载，用 grid 叠在同一格里（跟下面 split-layout/ai-card
@@ -1578,6 +1639,15 @@ function textOptions(items: string[]): SelectOption[] {
     错过一次就永远没有了。
   -->
   <NoticeModal :notices="pendingNotices" @dismiss="pendingNotices.shift()" />
+
+  <!-- 有新版本：固定在顶部中间，不占主界面的网格布局 -->
+  <Transition name="update-bar">
+    <div v-if="update && eulaAccepted" class="update-bar" role="status">
+      <span>有新版本 <strong>{{ update.display }}</strong>（当前 {{ DISPLAY_VERSION }}）</span>
+      <button v-if="update.url" type="button" class="primary-btn" @click="openUpdate">去下载</button>
+      <button type="button" class="update-bar-close" aria-label="关闭" @click="dismissUpdate">×</button>
+    </div>
+  </Transition>
 
   <SettingsModal
     v-model:open="settingsOpen"

@@ -283,6 +283,15 @@ pub struct VersionView {
     /// 测试版「自带 API key」开着没有。老服务端不发 → false。
     #[serde(default)]
     pub byok_enabled: bool,
+    /// 最新客户端的内部版本号；空 = 服务端没配，不提示。老服务端不发 → 空。
+    #[serde(default)]
+    pub latest_client: String,
+    /// 最新版给人看的名字，比如 "5.0-rc2"。
+    #[serde(default)]
+    pub latest_display: String,
+    /// 下载页地址。
+    #[serde(default)]
+    pub download_url: String,
 }
 
 pub async fn register_begin(username: &str, password: &str, phone: &str) -> Result<CodeSentView, String> {

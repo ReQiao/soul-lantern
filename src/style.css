@@ -3530,10 +3530,13 @@ button#primary,
  * ================================================================ */
 
 .settings-btn {
-  padding: 6px 14px;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border-radius: 12px;
-  font-size: 9.5pt;
-  font-weight: 700;
+  flex: none;
 }
 
 .settings-card {
@@ -3763,4 +3766,59 @@ button#primary,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 9pt;
+}
+
+/* ---- 有新版本提示条 ---- */
+.update-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 16px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 14px;
+  background: rgba(8, 22, 48, 0.82);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), var(--glass-edge, none);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  font-size: 9.5pt;
+  transform: translateX(-50%);
+}
+
+.update-bar .primary-btn {
+  padding: 5px 12px;
+}
+
+.update-bar-close {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  font-size: 12pt;
+  line-height: 1;
+}
+
+.update-bar-enter-active,
+.update-bar-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.update-bar-enter-from,
+.update-bar-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-bar-enter-active,
+  .update-bar-leave-active {
+    transition: opacity 0.15s ease;
+  }
+  .update-bar-enter-from,
+  .update-bar-leave-to {
+    transform: translateX(-50%);
+  }
 }
