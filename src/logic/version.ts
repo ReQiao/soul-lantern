@@ -8,7 +8,7 @@
  *   测试版：内部 5.0.0 → 显示 5.0-rc1
  *   正式版：内部 5.0.1 → 显示 5.0
  *
- * 安装包里的欢迎页文案在 src-tauri/installer/SimpChinese.nsh，发版时也要跟着改。
+ * 安装包欢迎页 / 完成页上的版本名在 src-tauri/installer/hooks.nsh，发版时也要跟着改。
  */
 export const DISPLAY_VERSION = "5.0-rc1";
 
