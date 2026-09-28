@@ -3524,3 +3524,243 @@ button#primary,
   height: 100%;
   min-height: 0;
 }
+
+/* ================================================================
+ * 设置（贡献者计划 / 反馈 / 版本）
+ * ================================================================ */
+
+.settings-btn {
+  padding: 6px 14px;
+  border-radius: 12px;
+  font-size: 9.5pt;
+  font-weight: 700;
+}
+
+.settings-card {
+  width: min(620px, 92vw);
+  max-width: none;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.settings-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-size: 11pt;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--muted, #93a4c8);
+  font-size: 9pt;
+  line-height: 1.6;
+}
+
+.settings-note-small {
+  font-size: 8.5pt;
+}
+
+.settings-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-align: left;
+  font-weight: 400;
+}
+
+.settings-level.active {
+  border-color: rgba(125, 211, 252, 0.6);
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.settings-level-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-reward {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 196, 92, 0.16);
+  color: #ffd479;
+  font-size: 8.5pt;
+}
+
+.settings-current {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.18);
+  color: #9fdcff;
+  font-size: 8.5pt;
+}
+
+.settings-level-desc {
+  color: var(--muted, #93a4c8);
+  font-size: 8.5pt;
+  line-height: 1.55;
+}
+
+.settings-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 209, 138, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 209, 138, 0.08);
+  font-size: 9.5pt;
+  line-height: 1.6;
+}
+
+.settings-confirm p {
+  margin: 0;
+}
+
+.settings-delta {
+  color: #ffd479;
+  font-weight: 700;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.settings-actions-wrap {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.settings-version {
+  color: var(--muted, #93a4c8);
+  font-size: 8.5pt;
+}
+
+/* ---- EULA 里的贡献者选择 ---- */
+.eula-contributor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.eula-contributor-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.eula-reward {
+  margin-left: 4px;
+  color: #ffd479;
+  font-size: 8.5pt;
+}
+
+.eula-contributor-confirm {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 209, 138, 0.1);
+  font-size: 9pt;
+  line-height: 1.6;
+}
+
+/* ---- 万灯集：举报 / 审核中 ---- */
+.plaza-review {
+  background: rgba(255, 157, 157, 0.16);
+  color: #ff9d9d;
+}
+
+.plaza-report-btn {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.plaza-report-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 157, 157, 0.08);
+  font-size: 9pt;
+}
+
+.plaza-report-form input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---- 管理页：举报审核 / 贡献数据 ---- */
+.admin-report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-report-content {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 8.5pt;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.admin-telemetry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-telemetry-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-weight: 400;
+}
+
+.admin-telemetry-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9pt;
+}

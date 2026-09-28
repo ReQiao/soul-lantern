@@ -86,6 +86,34 @@ pub async fn admin_health() -> Result<serde_json::Value, String> {
     remote::admin_health().await
 }
 
+/// 万灯集举报审核队列。
+#[tauri::command]
+pub async fn admin_reports() -> Result<serde_json::Value, String> {
+    remote::admin_reports().await
+}
+
+/// 处理一条举报：action 是 "restore"（没问题，恢复）或 "delete"（删掉）。
+#[tauri::command]
+pub async fn admin_resolve_report(work_id: String, comment_id: Option<String>, action: String) -> Result<serde_json::Value, String> {
+    remote::admin_resolve_report(&work_id, comment_id.as_deref(), &action).await
+}
+
+#[tauri::command]
+pub async fn admin_get_words() -> Result<serde_json::Value, String> {
+    remote::admin_get_words().await
+}
+
+#[tauri::command]
+pub async fn admin_set_words(text: String) -> Result<serde_json::Value, String> {
+    remote::admin_set_words(&text).await
+}
+
+/// 贡献者上报的数据，新的在前。kind / user 为空表示不过滤。
+#[tauri::command]
+pub async fn admin_telemetry(kind: String, user: String, limit: Option<u32>) -> Result<serde_json::Value, String> {
+    remote::admin_telemetry(&kind, &user, limit.unwrap_or(200)).await
+}
+
 /// 重启服务端。
 ///
 /// 服务端是用非零退出码触发 systemd 重启的，所以这个请求**多半拿不到正常

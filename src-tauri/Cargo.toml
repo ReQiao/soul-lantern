@@ -32,6 +32,8 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "system-proxy"] }
 # 测试版自带 key：加密后的 key 用 base64 存进配置文件（见 byok.rs）。
 base64 = "0.22"
+# 贡献者上报的「电脑架构信息」（系统版本 / CPU / 内存），见 contributor.rs。
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 # 定位各平台的 .minecraft 目录
 dirs = "6"
 # 读 level.dat（gzip 压缩的 NBT）里的 Data.Version.Name，识别存档实际版本

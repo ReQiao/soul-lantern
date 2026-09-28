@@ -57,6 +57,8 @@ export interface AuthState {
    * 否则下一次 `refreshAuth` 覆盖 `auth.value` 时就永远丢了。
    */
   notices: BalanceNotice[];
+  /** 贡献者等级：0 不贡献，1 贡献者，2 高级贡献者。见 SettingsModal / telemetry.ts。 */
+  contributorLevel: number;
 }
 
 const LOGGED_OUT: AuthState = {
@@ -70,6 +72,7 @@ const LOGGED_OUT: AuthState = {
   adminVerified: false,
   favorites: [],
   notices: [],
+  contributorLevel: 0,
 };
 
 /**

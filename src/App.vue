@@ -16,10 +16,12 @@ import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
 import PlazaPanel from "./components/PlazaPanel.vue";
 import AdminPanel from "./components/AdminPanel.vue";
+import SettingsModal from "./components/SettingsModal.vue";
 import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
 import { useMorphPopup } from "./logic/morphPopup";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
+import { maybeSendSession, reportError } from "./logic/telemetry";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
 // 换图之后不会因为浏览器缓存显示旧的。
 import lanternUrl from "./assets/soul-lantern.png";
@@ -87,7 +89,8 @@ const animationKey = "give-generator-animation";
 // 重新要求同意一遍，而不是永远沿用当初点过的那次同意。
 // v2：加了账号体系之后要收手机号，按《个人信息保护法》必须单独告知并取得同意。
 // 只改文案不改这个数字的话，已经点过同意的老用户永远看不到新条款，那份告知等于没做。
-const EULA_VERSION = "3";
+// v4：加了贡献者计划（第七节）；测试阶段不开放充值，第四节跟着改了。
+const EULA_VERSION = "4";
 const eulaKey = `give-generator-eula-accepted-v${EULA_VERSION}`;
 const eulaAccepted = ref(localStorage.getItem(eulaKey) === "true");
 const eulaScrolledToEnd = ref(false);
@@ -99,6 +102,72 @@ function checkEulaScrolled() {
   // 容差 8px：字体渲染/滚动条误差，卡在最后几像素不该拦着用户点不了同意。
   if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) eulaScrolledToEnd.value = true;
 }
+
+// ---------------- 贡献者计划：EULA 里先选，登录后生效 ----------------
+//
+// EULA 在登录之前，而等级和奖励是记在账号上的，所以这里只把选择存在本地，
+// 登录后（下面那个 watch）再去服务端生效。只会「升」不会「降」：换了个已经是
+// 高级贡献者的账号登录，不该因为这台电脑上当初选了「贡献者」就把它降下来。
+const CONTRIBUTOR_PENDING_KEY = "soul-lantern-contributor-pending";
+const eulaContributor = ref(0);
+/** 选了贡献者之后点同意，先弹一次确认（第二重确认就是这一步）。 */
+const eulaConfirming = ref(false);
+const EULA_LEVEL_NAMES = ["不贡献", "贡献者", "高级贡献者"];
+
+function readPendingContributor(): number {
+  try {
+    return Number(localStorage.getItem(CONTRIBUTOR_PENDING_KEY) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function onEulaAgree() {
+  if (eulaContributor.value > 0 && !eulaConfirming.value) {
+    eulaConfirming.value = true;
+    return;
+  }
+  try {
+    if (eulaContributor.value > 0) localStorage.setItem(CONTRIBUTOR_PENDING_KEY, String(eulaContributor.value));
+    else localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+  } catch {
+    // 存不下就当没选，设置页里还能再选
+  }
+  acceptEula();
+}
+
+let applyingPending = false;
+watch(
+  () => [auth.value.loggedIn, auth.value.contributorLevel] as const,
+  async ([loggedIn, level]) => {
+    if (!loggedIn) return;
+    const pending = readPendingContributor();
+    if (pending > level && !applyingPending) {
+      applyingPending = true;
+      try {
+        const v = await invoke<{ level: number; delta: number }>("contributor_set", { level: pending, dryRun: false });
+        localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+        await refreshAuth();
+        showToast(
+          `已成为${EULA_LEVEL_NAMES[v.level]}${v.delta > 0 ? `，获得 ${v.delta} 灵魂币` : ""}，谢谢！`,
+          3500,
+        );
+      } catch {
+        // 下次登录态刷新时再试
+      } finally {
+        applyingPending = false;
+      }
+      return;
+    }
+    if (pending && pending <= level) localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+    maybeSendSession();
+  },
+  { immediate: true },
+);
+
+// ---------------- 设置 ----------------
+const settingsOpen = ref(false);
+const settingsBtnEl = ref<HTMLElement | null>(null);
 
 function acceptEula() {
   eulaAccepted.value = true;
@@ -813,6 +882,7 @@ function useAiFromPlaza(payload: string, title: string) {
 }
 
 function showMessage(title: string, message: string, error = false) {
+  if (error) reportError("message", `${title}：${message}`);
   modal.title = title;
   modal.message = message;
   modal.error = error;
@@ -820,6 +890,8 @@ function showMessage(title: string, message: string, error = false) {
 }
 
 function showToast(message: string, duration = 1800) {
+  // 失败类提示也算一次错误记录（大部分操作失败都是走 toast 告诉用户的）
+  if (/失败|出错|错误|无法/.test(message)) reportError("toast", message);
   toastText.value = message;
   if (toastTimer !== undefined) window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -985,8 +1057,14 @@ function textOptions(items: string[]): SelectOption[] {
         </p>
         <p>
           AI 生成按<strong>真实调用量</strong>折算扣除灵魂币，不是固定单价。
-          当前处于免费测试阶段，充值不会真实扣款；未来若开放付费，会在充值页面明确标示，
+          当前处于测试阶段，<strong>暂不开放充值和激活码</strong>，灵魂币只能通过注册赠送、
+          反馈奖励和贡献者计划获得；未来若开放付费，会在充值页面明确标示，
           <strong>不会在你不知情的情况下扣费</strong>。
+        </p>
+        <p>
+          测试期间可以选择<strong>「使用自己的 API key」</strong>：此时你的 key 加密保存在本机，
+          需求描述由你的电脑直接发给你选择的模型服务商，<strong>key 不经过开发者的服务器</strong>；
+          服务器只接收 AI 的输出用来生成指令。该功能正式版会关闭。
         </p>
         <p>
           AI 的输出可能出错。软件已经用确定性构建器兜住语法合法性，
@@ -1012,16 +1090,52 @@ function textOptions(items: string[]): SelectOption[] {
           本协议如有实质性修改，软件会在下次启动时再次向你完整展示并请求同意，
           不会沿用你此前的同意。
         </p>
+        <h3>七、贡献者计划（自愿，可随时更改）</h3>
+        <p>
+          你可以<strong>自愿</strong>选择把一些使用数据发给开发者，帮忙发现问题、改进 AI 生成，
+          并获得一次性的灵魂币奖励。<strong>默认不加入</strong>，不加入不影响任何功能。
+        </p>
+        <ul>
+          <li><strong>不贡献</strong>——不上报任何数据。</li>
+          <li>
+            <strong>贡献者</strong>（奖励 1000 灵魂币）——上报<strong>电脑架构信息</strong>
+            （系统版本、CPU、内存、屏幕尺寸、软件版本）和<strong>出错时的操作记录</strong>
+            （最近点了哪些按钮、错误信息）。<strong>不记录你在输入框里打的字</strong>，
+            也不收集主机名、系统用户名、硬件序列号。
+          </li>
+          <li>
+            <strong>高级贡献者</strong>（奖励 2000 灵魂币，含贡献者那一档）——在贡献者的基础上，
+            再上报 <strong>AI 模式里你输入的提示词和 AI 的输出结果</strong>。
+          </li>
+        </ul>
+        <p>
+          数据只用于排查问题和改进本软件，存放在开发者的服务器上，<strong>不出售、不共享给第三方</strong>。
+          你可以<strong>随时</strong>在「设置」里降级或退出，退出后不再上报；
+          <strong>升级后 30 天内降级或退出，会收回那一档的奖励</strong>（余额不够的话扣到 0）。
+          奖励每个账号每档只发一次。需要删除已上报的数据，请通过第三节的渠道联系。
+        </p>
         <p>
           点击下方"我已阅读并同意"，即表示你已完整阅读、理解并同意接受本协议的全部条款，
           <strong>并同意开发者按第三节所述的目的和范围处理你的手机号等个人信息</strong>；
           如不同意，请勿使用本软件。
         </p>
       </div>
+      <div class="eula-contributor">
+        <span class="field-label">贡献者计划（第七节，可选）</span>
+        <div class="eula-contributor-options">
+          <label v-for="(name, lvl) in EULA_LEVEL_NAMES" :key="lvl" class="check-line">
+            <input v-model="eulaContributor" type="radio" :value="lvl" @change="eulaConfirming = false" />
+            {{ name }}<span v-if="lvl === 1" class="eula-reward">+1000</span><span v-if="lvl === 2" class="eula-reward">+2000</span>
+          </label>
+        </div>
+        <p v-if="eulaConfirming" class="eula-contributor-confirm">
+          你选择了<strong>{{ EULA_LEVEL_NAMES[eulaContributor] }}</strong>：将按第七节上报{{ eulaContributor === 2 ? "电脑架构信息、出错时的操作记录，以及 AI 提示词和输出" : "电脑架构信息和出错时的操作记录" }}。登录后生效，奖励发到账号上。确认的话再点一次「确认并同意」。
+        </p>
+      </div>
       <div class="eula-actions">
         <button type="button" @click="declineEula">不同意（退出）</button>
-        <button type="button" class="primary-btn" :disabled="!eulaScrolledToEnd" @click="acceptEula">
-          {{ eulaScrolledToEnd ? "我已阅读并同意" : "请先滑到底部" }}
+        <button type="button" class="primary-btn" :disabled="!eulaScrolledToEnd" @click="onEulaAgree">
+          {{ !eulaScrolledToEnd ? "请先滑到底部" : eulaConfirming ? "确认并同意" : "我已阅读并同意" }}
         </button>
       </div>
     </div>
@@ -1073,6 +1187,13 @@ function textOptions(items: string[]): SelectOption[] {
             @click="selectMode('admin')"
           >管理</button>
         </div>
+        <button
+          ref="settingsBtnEl"
+          type="button"
+          class="settings-btn"
+          aria-label="设置"
+          @click="settingsOpen = true"
+        >设置</button>
       </div>
       <!--
         两套顶部工具条一直同时挂载，用 grid 叠在同一格里（跟下面 split-layout/ai-card
@@ -1457,6 +1578,13 @@ function textOptions(items: string[]): SelectOption[] {
     错过一次就永远没有了。
   -->
   <NoticeModal :notices="pendingNotices" @dismiss="pendingNotices.shift()" />
+
+  <SettingsModal
+    v-model:open="settingsOpen"
+    :origin="settingsBtnEl"
+    :animate="animationEnabled"
+    @toast="showToast"
+  />
 
   <!--
     模板库：内置模板 + 从万灯集收藏来的。

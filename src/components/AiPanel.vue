@@ -26,6 +26,7 @@ import {
   openAuth,
   recheckAuth,
 } from "../logic/auth";
+import { reportError } from "../logic/telemetry";
 import CustomSelect from "./CustomSelect.vue";
 import DeployPanel from "./DeployPanel.vue";
 import InfoTip from "./InfoTip.vue";
@@ -162,9 +163,11 @@ const showTopup = ref(false);
 
 // refreshAuth 现在住在 logic/auth.ts 里，它不知道余额条这回事，
 // 所以余额跟随登录态的同步放在这里做。
+// 也跟着 auth.value.balance 走：设置页改贡献者等级会发 / 扣币，刷新登录态之后
+// 这里要跟着变，不然余额条显示的还是旧数。
 watch(
-  () => auth.value.loggedIn,
-  (loggedIn) => {
+  () => [auth.value.loggedIn, auth.value.balance] as const,
+  ([loggedIn]) => {
     if (loggedIn) balance.value = auth.value.balance;
   },
   { immediate: true },
@@ -423,6 +426,10 @@ function usePrompt(payload: string, title: string) {
 }
 const busy = ref(false);
 const errorText = ref("");
+// AI 模式的失败原因（上游报错、解析失败、余额不足…）进贡献者的错误记录。
+watch(errorText, (text) => {
+  if (text) reportError(usingByok.value ? "ai:byok" : "ai", text);
+});
 const explanation = ref("");
 /** 一次性命令：可以直接复制粘贴到聊天栏，也可以走一键部署。 */
 const commands = ref<string[]>([]);

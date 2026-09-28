@@ -41,6 +41,8 @@ pub struct AuthState {
     /// 谁拿到谁就得负责弹出来——`auth_state` 每次调用都可能带回一批新的，
     /// 前端不能因为"这次不方便显示"就丢掉。
     pub notices: Vec<remote::BalanceNotice>,
+    /// 贡献者等级 0 / 1 / 2（见服务端 contributor.rs）。
+    pub contributor_level: u8,
 }
 
 impl AuthState {
@@ -56,6 +58,7 @@ impl AuthState {
             admin_verified: false,
             favorites: Vec::new(),
             notices: Vec::new(),
+            contributor_level: 0,
         }
     }
 }
@@ -91,6 +94,7 @@ pub async fn auth_state() -> Result<AuthState, ()> {
             admin_verified: me.admin_verified,
             favorites: me.user.favorites,
             notices: me.notices,
+            contributor_level: me.contributor_level,
         }),
         Err(e) => {
             // remote::parse_json 遇到 401 已经清过本地会话了。这里只需要区分
@@ -254,6 +258,8 @@ pub async fn auth_register_verify(phone: String, code: String) -> Result<AuthSta
         // 登录响应不带通知。通知走 /v1/auth/me（auth_state），
         // 前端登录成功后本来就会刷一次登录态，那一次会拿到。
         notices: Vec::new(),
+        // 同上：等级也等那次 auth_state 刷新拿到。
+        contributor_level: 0,
     })
 }
 
@@ -276,6 +282,8 @@ pub async fn auth_login(account: String, password: String) -> Result<AuthState, 
         // 登录响应不带通知。通知走 /v1/auth/me（auth_state），
         // 前端登录成功后本来就会刷一次登录态，那一次会拿到。
         notices: Vec::new(),
+        // 同上：等级也等那次 auth_state 刷新拿到。
+        contributor_level: 0,
     })
 }
 

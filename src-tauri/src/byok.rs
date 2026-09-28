@@ -390,7 +390,8 @@ pub async fn byok_generate(
         Ok(pair) => pair,
         Err(e) => return Ok(failure(e)),
     };
-    match remote::byok_build(&content, &version).await {
+    let model = load().model;
+    match remote::byok_build(&content, &version, &user_text, &model).await {
         Ok(resp) => Ok(AiResponse {
             ok: resp.ok,
             commands: resp.commands,

@@ -236,6 +236,9 @@ pub struct MeView {
     /// 只会到达客户端一次——拿到就必须弹出来，丢了就再也没有了。
     #[serde(default)]
     pub notices: Vec<BalanceNotice>,
+    /// 贡献者等级。老服务端不发 → 0。
+    #[serde(default)]
+    pub contributor_level: u8,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -492,6 +495,68 @@ pub async fn plaza_comment(id: &str, body: &str) -> Result<serde_json::Value, St
     post_auth(&format!("/v1/plaza/works/{id}/comments"), &serde_json::json!({ "body": body })).await
 }
 
+pub async fn plaza_report(id: &str, comment_id: Option<&str>, reason: &str) -> Result<serde_json::Value, String> {
+    let path = match comment_id {
+        Some(cid) => format!("/v1/plaza/works/{id}/comments/{cid}/report"),
+        None => format!("/v1/plaza/works/{id}/report"),
+    };
+    post_auth(&path, &serde_json::json!({ "reason": reason })).await
+}
+
+// ---------------------------------------------------------------- 管理：审核 / 敏感词 / 贡献数据
+
+pub async fn admin_reports() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/reports").await
+}
+
+pub async fn admin_resolve_report(work_id: &str, comment_id: Option<&str>, action: &str) -> Result<serde_json::Value, String> {
+    post_auth(
+        "/v1/admin/session/reports/resolve",
+        &serde_json::json!({ "workId": work_id, "commentId": comment_id, "action": action }),
+    )
+    .await
+}
+
+pub async fn admin_get_words() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/words").await
+}
+
+pub async fn admin_set_words(text: &str) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/words", &serde_json::json!({ "text": text })).await
+}
+
+pub async fn admin_telemetry(kind: &str, user: &str, limit: u32) -> Result<serde_json::Value, String> {
+    let token = bearer()?;
+    let resp = client()
+        .get(format!("{}/v1/admin/session/telemetry", server_base()))
+        .query(&[("kind", kind), ("user", user), ("limit", &limit.to_string())])
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+// ---------------------------------------------------------------- 贡献者计划
+
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributorView {
+    pub level: u8,
+    /// 余额变化：正数是奖励，负数是收回。dryRun 时是"假如执行"的数。
+    pub delta: i64,
+    pub balance: i64,
+    pub applied: bool,
+}
+
+pub async fn contributor_set(level: u8, dry_run: bool) -> Result<ContributorView, String> {
+    post_auth("/v1/contributor", &serde_json::json!({ "level": level, "dryRun": dry_run })).await
+}
+
+pub async fn telemetry_upload(kind: &str, data: &serde_json::Value) -> Result<serde_json::Value, String> {
+    post_auth("/v1/telemetry", &serde_json::json!({ "kind": kind, "data": data })).await
+}
+
 pub async fn plaza_delete_comment(id: &str, comment_id: &str) -> Result<serde_json::Value, String> {
     let token = bearer()?;
     let resp = client()
@@ -607,16 +672,19 @@ pub async fn ai_generate(
 struct ByokBuildReq<'a> {
     content: &'a str,
     version: &'a str,
+    /// 只用于高级贡献者的 AI 记录（服务端决定记不记），不影响构建。
+    user_text: &'a str,
+    model: &'a str,
 }
 
 /// 把用户自己的 key 调出来的 AI 输出交给服务端构建器转成指令。不扣费。
 /// 返回的形状和 `ai_generate` 完全一样（服务端两条路共用同一个构建函数）。
-pub async fn byok_build(content: &str, version: &str) -> Result<AiGenerateResp, String> {
+pub async fn byok_build(content: &str, version: &str, user_text: &str, model: &str) -> Result<AiGenerateResp, String> {
     let token = bearer()?;
     let resp = client()
         .post(format!("{}/v1/byok/build", server_base()))
         .bearer_auth(token)
-        .json(&ByokBuildReq { content, version })
+        .json(&ByokBuildReq { content, version, user_text, model })
         .send()
         .await
         .map_err(describe_connect_err)?;

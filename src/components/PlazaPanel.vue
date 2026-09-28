@@ -60,6 +60,8 @@ interface Brief {
   liked: boolean;
   favorited: boolean;
   excerpt: string;
+  /** 被举报隐藏、等管理员审。只有作者自己（和管理员）会看到带这个标记的作品。 */
+  underReview?: boolean;
 }
 /**
  * 列表项里的评论**条数**。
@@ -198,6 +200,7 @@ async function openDetail(id: string) {
   if (got) {
     detail.value = got;
     commentBody.value = "";
+    reportTarget.value = null;
     view.value = "detail";
   }
 }
@@ -303,6 +306,44 @@ async function removeWork() {
  * （评论作者 / 作品作者 / 管理员三种人能删）。这里少判一种情况顶多是按钮没
  * 出来，多判一种也只是点了之后被服务端拒掉。
  */
+// ---------------- 举报 ----------------
+//
+// 不用 window.prompt：各平台 webview 对它的支持不一致（有的直接返回 null）。
+// 就地展开一个小表单。
+const reportTarget = ref<{ commentId: string | null; label: string } | null>(null);
+const reportReason = ref("");
+
+function startReport(commentId: string | null, label: string) {
+  if (needLogin()) return;
+  reportTarget.value = { commentId, label };
+  reportReason.value = "";
+}
+
+async function submitReport() {
+  const d = detail.value;
+  const t = reportTarget.value;
+  if (!d || !t) return;
+  const r = await run(() =>
+    invoke<{ hidden: boolean }>("plaza_report", { id: d.id, commentId: t.commentId, reason: reportReason.value }),
+  );
+  if (!r) return;
+  reportTarget.value = null;
+  emit("toast", "已举报，管理员会尽快处理，谢谢");
+  if (r.hidden) {
+    if (t.commentId) {
+      d.comments = d.comments.filter((c) => c.id !== t.commentId);
+    } else {
+      works.value = works.value.filter((w) => w.id !== d.id);
+      view.value = "list";
+    }
+  }
+}
+
+/** 自己的东西不给举报按钮（服务端也会拦）。 */
+function canReportComment(c: Comment): boolean {
+  return !auth.value.loggedIn || c.authorName !== auth.value.username;
+}
+
 function canRemoveComment(c: Comment): boolean {
   const d = detail.value;
   if (!d || !auth.value.loggedIn) return false;
@@ -432,6 +473,7 @@ async function doPublish() {
                  完了详情页就没人点了。见 Detail 里的 excerpt 字段依然保留
                  （服务端还在下发），只是这里不渲染。 -->
             <span class="plaza-item-meta">
+              <span v-if="w.underReview" class="plaza-tag plaza-review">审核中</span>
               <span class="plaza-tag">{{ categoryLabel(w.category) }}</span>
               <span>{{ w.authorName }}</span>
               <span>{{ ago(w.createdAt) }}</span>
@@ -456,6 +498,7 @@ async function doPublish() {
               <div>
                 <h3>{{ detail.title }}</h3>
                 <p class="plaza-detail-meta">
+                  <span v-if="detail.underReview" class="plaza-tag plaza-review">审核中（被举报，暂时只有你和管理员看得到）</span>
                   <span class="plaza-tag">{{ categoryLabel(detail.category) }}</span>
                   {{ detail.authorName }} · {{ ago(detail.createdAt) }} ·
                   ↓ {{ detail.downloads }}
@@ -482,6 +525,21 @@ async function doPublish() {
               <button v-if="detail.canDelete" type="button" class="plaza-danger" @click="removeWork">
                 删除
               </button>
+              <button
+                v-else
+                type="button"
+                class="auth-link plaza-report-btn"
+                @click="startReport(null, `作品「${detail.title}」`)"
+              >
+                举报
+              </button>
+            </div>
+
+            <div v-if="reportTarget" class="plaza-report-form">
+              <span>举报{{ reportTarget.label }}</span>
+              <input v-model="reportReason" maxlength="100" placeholder="理由（可选）：比如广告、违规内容、辱骂…" />
+              <button type="button" :disabled="busy" @click="reportTarget = null">取消</button>
+              <button type="button" class="plaza-danger" :disabled="busy" @click="submitReport">提交举报</button>
             </div>
 
             <p v-if="errorText" class="auth-error">{{ errorText }}</p>
@@ -499,6 +557,14 @@ async function doPublish() {
                     @click="removeComment(c.id)"
                   >
                     删除
+                  </button>
+                  <button
+                    v-if="canReportComment(c)"
+                    type="button"
+                    class="auth-link plaza-report-btn"
+                    @click="startReport(c.id, `${c.authorName} 的评论`)"
+                  >
+                    举报
                   </button>
                 </div>
                 <p class="plaza-comment-body">{{ c.body }}</p>
