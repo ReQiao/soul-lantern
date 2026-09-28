@@ -1,6 +1,6 @@
 [package]
 name = "soul-lantern"
-version = "4.1.0"
+version = "5.0.0"
 description = "Minecraft Soul Lantern command generator"
 authors = ["ReQiao"]
 license = "AGPL-3.0-or-later"

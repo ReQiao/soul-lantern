@@ -499,8 +499,13 @@ watch(
       <!-- ================= 环境变量 ================= -->
       <template v-else-if="tab === 'env'">
         <p class="admin-hint">
-          文件：<code>{{ env?.path ?? "（这台服务不是用 --env-file 启动的）" }}</code>
-          <span v-if="env && !env.writable" class="admin-warn">· 服务对这个文件没有写权限</span>
+          文件：<code>{{ env?.path ?? "（未知）" }}</code>
+          <span v-if="env && !env.path" class="admin-warn">
+            · 服务的启动命令没带 <code>--env-file</code>，所以这里看不到也改不了 .env。
+            用最新的「部署.bat」部署一次会自动补上（或手动在 systemd 单元的 ExecStart 末尾加
+            <code>--env-file /opt/soul-lantern/.env</code>）。
+          </span>
+          <span v-else-if="env && !env.writable" class="admin-warn">· 服务对这个文件没有写权限</span>
         </p>
         <p class="admin-hint">
           密钥类只显示"已设置（N 字符）"，<strong>不会</strong>把明文发到这里来——

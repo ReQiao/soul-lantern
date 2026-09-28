@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { auth, desktop, openAuth, refreshAuth } from "../logic/auth";
 import { useMorphPopup } from "../logic/morphPopup";
 import { diagnosticsText } from "../logic/telemetry";
+import { DISPLAY_VERSION, IS_PRERELEASE } from "../logic/version";
 
 const props = defineProps<{
   open: boolean;
@@ -248,7 +249,7 @@ async function copyDiagnostics() {
 
             <!-- ================= 版本 ================= -->
             <section class="settings-section settings-version">
-              灵魂灯笼 · 测试版{{ appVersion ? ` v${appVersion}` : "" }}
+              灵魂灯笼 {{ DISPLAY_VERSION }}{{ IS_PRERELEASE ? "（测试版）" : "" }}{{ appVersion ? ` · 内部版本 ${appVersion}` : "" }}
             </section>
           </div>
         </div>

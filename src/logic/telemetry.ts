@@ -14,6 +14,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { App } from "vue";
 import { auth, desktop } from "./auth";
+import { DISPLAY_VERSION, IS_PRERELEASE } from "./version";
 
 const MAX_CRUMBS = 40;
 const MAX_ERRORS_PER_RUN = 20;
@@ -52,6 +53,7 @@ async function getSystemInfo(): Promise<Record<string, unknown>> {
   }
   return {
     ...systemInfo,
+    displayVersion: DISPLAY_VERSION,
     screen: `${window.screen.width}x${window.screen.height}`,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
     dpr: window.devicePixelRatio,
@@ -95,7 +97,7 @@ export function maybeSendSession() {
 export async function diagnosticsText(): Promise<string> {
   const sys = await getSystemInfo();
   const lines = [
-    `灵魂灯笼 ${sys.appVersion ?? ""}（测试版）`,
+    `灵魂灯笼 ${DISPLAY_VERSION}${IS_PRERELEASE ? "（测试版）" : ""}，内部版本 ${sys.appVersion ?? ""}`,
     `系统：${sys.osVersion || sys.os || ""} ${sys.arch ?? ""}`,
     `CPU：${sys.cpu ?? ""}（${sys.cpuCores ?? "?"} 线程），内存 ${sys.memoryMb ?? "?"} MB`,
     `屏幕：${sys.screen}，窗口 ${sys.viewport}，缩放 ${sys.dpr}`,
