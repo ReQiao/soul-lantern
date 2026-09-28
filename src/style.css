@@ -2884,11 +2884,6 @@ button#primary,
   gap: 8px;
   margin: 0;
 }
-.plaza-lantern {
-  /* 灯笼是这个功能的标志物，给它一点暖光，和背景那盏呼应 */
-  filter: drop-shadow(0 0 10px rgba(255, 176, 76, 0.55));
-}
-
 .plaza-filters {
   display: flex;
   flex-wrap: wrap;
@@ -3299,7 +3294,6 @@ button#primary,
   opacity: 0.75;
 }
 .tpl-grid { max-height: 40vh; }
-.tpl-plaza-btn { align-self: flex-start; }
 
 /* 同 .auth-inner 那条注释：.picker-card 整块 overflow:hidden 是给动画变形
    裁边角用的，内置模板+收藏两个网格各自 40vh 封顶之后仍可能比 80vh 高，

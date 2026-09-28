@@ -1061,7 +1061,7 @@ function textOptions(items: string[]): SelectOption[] {
             :aria-selected="mode === 'plaza'"
             :class="{ active: mode === 'plaza' }"
             @click="selectMode('plaza')"
-          >🏮 万灯集</button>
+          >万灯集</button>
           <!-- 只有解锁过管理权限的会话才看得到这个 tab。退出登录/重新登录之后
                它会自己消失，因为 adminVerified 是跟着服务端会话走的。 -->
           <button
@@ -1503,7 +1503,7 @@ function textOptions(items: string[]): SelectOption[] {
               class="plaza-item"
               @click="useFavoriteTemplate(f.id, f.title)"
             >
-              <span class="plaza-item-icon">{{ f.icon || "🏮" }}</span>
+              <span class="plaza-item-icon">{{ f.icon || "📄" }}</span>
               <span class="plaza-item-body">
                 <span class="plaza-item-title">{{ f.title }}</span>
                 <span class="plaza-item-meta">
@@ -1518,13 +1518,6 @@ function textOptions(items: string[]): SelectOption[] {
             但内置模板照常能用——手动模式本来就不需要联网。）
           </p>
 
-          <button
-            class="primary-btn tpl-plaza-btn"
-            type="button"
-            @click="templateModalOpen = false; selectMode('plaza')"
-          >
-            🏮 去万灯集逛逛
-          </button>
           </div>
         </div>
       </div>

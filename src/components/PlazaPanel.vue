@@ -365,7 +365,6 @@ async function doPublish() {
     <!-- ---------------- 头部 ---------------- -->
     <div class="plaza-head">
       <h2>
-        <span class="plaza-lantern">🏮</span>
         万灯集
         <InfoTip
           text="大家互相分享模板的地方。每个人发出去的一份模板就是一盏灯。手动模板存的是整套表单配置，AI 模板存的是一段提示词。"
@@ -425,7 +424,7 @@ async function doPublish() {
           class="plaza-item"
           @click="openDetail(w.id)"
         >
-          <span class="plaza-item-icon">{{ w.icon || "🏮" }}</span>
+          <span class="plaza-item-icon">{{ w.icon || "📄" }}</span>
           <span class="plaza-item-body">
             <span class="plaza-item-title">{{ w.title }}</span>
             <!-- 【不要把 excerpt 加回来】点进详情之前不该看到内容摘要——那是
@@ -453,7 +452,7 @@ async function doPublish() {
             </div>
 
             <div class="plaza-detail-title">
-              <span class="plaza-item-icon">{{ detail.icon || "🏮" }}</span>
+              <span class="plaza-item-icon">{{ detail.icon || "📄" }}</span>
               <div>
                 <h3>{{ detail.title }}</h3>
                 <p class="plaza-detail-meta">

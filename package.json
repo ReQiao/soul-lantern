@@ -12,8 +12,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "tsx src/logic/builder.test.mjs && tsx src/logic/glass.test.mjs && tsx src/logic/markdown.test.mjs",
-    "verify-syntax": "node scripts/mc-verifier/index.mjs",
-    "demo": "node scripts/demo-local.mjs"
+    "verify-syntax": "node scripts/mc-verifier/index.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
