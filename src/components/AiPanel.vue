@@ -277,12 +277,12 @@ onMounted(() => {
  *
  * 【模型 ID】价目表现在只保留控制台上实际在架的型号，服务端 policy.rs
  * 删掉了别名键（qwen-plus/qwen-long/qwen3.7-flash 已经不再单独注册），
- * 所以下面这几个 value 必须和 policy.rs 里的键名逐字一致——填错/填一个
- * 已下架的名字不会报错，只会静默落到 default_model_price 按错的价格扣钱。
+ * 所以下面这几个 value 必须和服务端 policy.json 里 model_prices 的键名逐字一致——
+ * 服务端现在有模型白名单：不在 model_prices 里（也不是 .env 的 AI_MODEL）的模型
+ * 直接拒绝，界面上会显示「不支持的模型」。
  *
- * 【deepseek-v4-pro 已下架】换成了 deepseek-v4-flash-0731。这不是改名，
- * 是型号本身被替换了。新型号是峰谷定价（百炼公告 2026-08-17 起），服务端
- * 按忙时价（更贵的那档）算，价格已经在 policy.json 里备好了（3/9，缓存 0.3）。
+ * 【deepseek-v4.1-flash】替换了 deepseek-v4-flash-0731（更早之前是 deepseek-v4-pro）。
+ * 服务端 policy.json 的 model_prices 里要有同名的一条，由运营者在管理页「价格配置」里改。
  *
  * 【glm-5.3】它不是通义的模型。服务端目前是单 endpoint 单 key（ai_proxy.rs
  * 的 AI_ENDPOINT/AI_API_KEY），所以这一项只有在服务器的 AI_ENDPOINT 确实
@@ -295,7 +295,7 @@ const MODEL_OPTIONS = [
   { label: "Qwen Max（旗舰，贵）", value: "qwen3.8-max" },
   { label: "Qwen Flash（最便宜）", value: "qwen3.8-flash" },
   { label: "Qwen Long（长上下文，性价比高）", value: "qwen-long-latest" },
-  { label: "DeepSeek V4 Flash（便宜）", value: "deepseek-v4-flash-0731" },
+  { label: "DeepSeek V4.1 Flash（便宜）", value: "deepseek-v4.1-flash" },
   { label: "GLM-5.3（需服务端支持）", value: "glm-5.3" },
 ] as const;
 const apiModel = ref<string>("");
