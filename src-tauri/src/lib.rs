@@ -7,6 +7,7 @@ pub mod billing;
 pub mod byok;
 pub mod contributor;
 mod datapack;
+pub mod paths;
 pub mod plaza;
 pub mod remote;
 pub mod session;
@@ -15,6 +16,17 @@ pub mod window;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|_app| {
+            // 移动端的配置目录要从 Tauri 拿（见 paths.rs）；桌面端沿用原来的位置，这里什么都不做。
+            #[cfg(mobile)]
+            {
+                use tauri::Manager;
+                if let Ok(dir) = _app.path().app_config_dir() {
+                    paths::init_mobile(dir);
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

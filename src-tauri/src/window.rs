@@ -12,20 +12,39 @@
 use tauri::Window;
 
 /// 切换全屏。返回切换**之后**的状态，前端拿它更新提示文案。
+///
+/// 移动端没有「窗口全屏」这回事（App 本来就占满屏幕，Tauri 在移动端也不提供这个接口），
+/// 直接返回 false。
 #[tauri::command]
 pub fn window_toggle_fullscreen(window: Window) -> Result<bool, String> {
-    let next = !window.is_fullscreen().map_err(|e| e.to_string())?;
-    window.set_fullscreen(next).map_err(|e| e.to_string())?;
-    // 退出全屏之后焦点有时会掉在 webview 外面，键盘事件收不到——下一次 F11
-    // 就没反应了，看起来像"全屏卡住了"。这里主动要回来。
-    let _ = window.set_focus();
-    Ok(next)
+    #[cfg(desktop)]
+    {
+        let next = !window.is_fullscreen().map_err(|e| e.to_string())?;
+        window.set_fullscreen(next).map_err(|e| e.to_string())?;
+        // 退出全屏之后焦点有时会掉在 webview 外面，键盘事件收不到——下一次 F11
+        // 就没反应了，看起来像"全屏卡住了"。这里主动要回来。
+        let _ = window.set_focus();
+        Ok(next)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = window;
+        Ok(false)
+    }
 }
 
 /// 当前是不是全屏。启动时前端要用它对齐初始状态。
 #[tauri::command]
 pub fn window_is_fullscreen(window: Window) -> Result<bool, String> {
-    window.is_fullscreen().map_err(|e| e.to_string())
+    #[cfg(desktop)]
+    {
+        window.is_fullscreen().map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = window;
+        Ok(false)
+    }
 }
 
 #[cfg(test)]

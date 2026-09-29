@@ -24,7 +24,7 @@ pub struct StoredSession {
 }
 
 fn session_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("soul-lantern").join("session.json"))
+    crate::paths::config_dir().map(|d| d.join("session.json"))
 }
 
 pub fn load() -> Option<StoredSession> {

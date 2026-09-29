@@ -8,7 +8,7 @@
 //! 服务器上走不通，只能从用户电脑上发。所以这里用的是一个**普通的** HTTPS 客户端
 //! （公共 CA + 系统代理），不是 remote.rs 那个只认自家证书的锁定客户端。
 //!
-//! key 的存储：`dirs::config_dir()/soul-lantern/byok.json`。
+//! key 的存储：配置目录（见 paths.rs）下的 `byok.json`。
 //! - Windows：用系统 DPAPI（CryptProtectData）加密后再写文件。密钥绑定当前 Windows
 //!   账号，文件被拷到别的电脑 / 别的账号下解不开，同步到网盘也不怕。
 //! - 其它系统：明文写文件，权限设成只有自己能读（0600）。
@@ -38,7 +38,7 @@ struct Stored {
 }
 
 fn config_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("soul-lantern").join("byok.json"))
+    crate::paths::config_dir().map(|d| d.join("byok.json"))
 }
 
 fn load() -> Stored {
