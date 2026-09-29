@@ -266,9 +266,11 @@ onMounted(() => {
 /**
  * 大模型调用现在统一转发到自建服务器（key 只在服务器上，见
  * src-tauri/src/remote.rs 顶部注释），但模型选哪个仍然交给用户——价格/
- * 上下文/靠谱程度差很多：Plus 最稳，Long 性价比最高，Flash 最便宜，
- * Max 贵但能力更强，DeepSeek 是 Flash 档，便宜但不算强。留空/选不到就用
- * 服务器 .env 里 AI_MODEL 的默认值。
+ * 上下文/靠谱程度差很多。下拉里只写模型名称，不写「稳 / 便宜」这类说明（价格会变，
+ * 说明写死在客户端迟早和实际对不上）。
+ *
+ * 【去掉了「服务器默认」和 qwen3.8-max】默认选中第一项 qwen3.7-plus，请求里总是带上
+ * 明确的模型名；Max 太贵，测试期不开放（服务端 model_prices 里有也选不到）。
  *
  * 【价格】以前这里写着 Flash「注意 32k 阶梯跳价」——那是旧版通义的计费方式，
  * qwen3.8-flash 已经取消阶梯，全程 0.8/2.7 每百万 token，所以这句提示删掉了。
@@ -290,15 +292,13 @@ onMounted(() => {
  * 上游的「模型不存在」错误。价格已经在 policy.json 里备好了（8/28，缓存 2）。
  */
 const MODEL_OPTIONS = [
-  { label: "服务器默认", value: "" },
-  { label: "Qwen Plus（稳）", value: "qwen3.7-plus" },
-  { label: "Qwen Max（旗舰，贵）", value: "qwen3.8-max" },
-  { label: "Qwen Flash（最便宜）", value: "qwen3.8-flash" },
-  { label: "Qwen Long（长上下文，性价比高）", value: "qwen-long-latest" },
-  { label: "DeepSeek V4.1 Flash（便宜）", value: "deepseek-v4.1-flash" },
-  { label: "GLM-5.3（需服务端支持）", value: "glm-5.3" },
+  { label: "qwen3.7-plus", value: "qwen3.7-plus" },
+  { label: "qwen3.8-flash", value: "qwen3.8-flash" },
+  { label: "qwen-long-latest", value: "qwen-long-latest" },
+  { label: "deepseek-v4.1-flash", value: "deepseek-v4.1-flash" },
+  { label: "glm-5.3", value: "glm-5.3" },
 ] as const;
-const apiModel = ref<string>("");
+const apiModel = ref<string>(MODEL_OPTIONS[0].value);
 
 // ---------------- 【测试版】使用自己的 API key ----------------
 //
@@ -725,7 +725,7 @@ defineExpose({ userText, usePrompt });
       <div v-else class="ai-model-row">
         <span class="field-label">
           模型
-          <InfoTip text="不同模型价格/能力差很多：Plus 最稳，Long 性价比最高，Flash 和 DeepSeek 最便宜，Max 贵但能力更强。GLM-5.3 需要服务端接了对应网关才能用。拿不准就选「服务器默认」。" />
+          <InfoTip text="不同模型的价格和能力差别很大，生成前会按所选模型预估这次最多消耗多少灵魂币。拿不准就用默认的 qwen3.7-plus。" />
         </span>
         <CustomSelect
           v-model="apiModel"
