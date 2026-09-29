@@ -72,6 +72,12 @@ pub async fn plaza_comment(id: String, body: String) -> Result<serde_json::Value
     remote::plaza_comment(&id, body.trim()).await
 }
 
+/// 举报作品（comment_id 为空）或评论。
+#[tauri::command]
+pub async fn plaza_report(id: String, comment_id: Option<String>, reason: String) -> Result<serde_json::Value, String> {
+    remote::plaza_report(&id, comment_id.as_deref().filter(|c| !c.is_empty()), reason.trim()).await
+}
+
 #[tauri::command]
 pub async fn plaza_delete_comment(id: String, comment_id: String) -> Result<serde_json::Value, String> {
     remote::plaza_delete_comment(&id, &comment_id).await

@@ -4,6 +4,8 @@ pub mod admin;
 pub mod ai;
 pub mod auth;
 pub mod billing;
+pub mod byok;
+pub mod contributor;
 mod datapack;
 pub mod plaza;
 pub mod remote;
@@ -21,7 +23,10 @@ pub fn run() {
             auth::auth_state,
             auth::auth_required,
             auth::auth_sms_sign_name,
+            auth::auth_context_rounds,
+            auth::auth_byok_enabled,
             auth::auth_upgrade_notice,
+            auth::auth_update_available,
             auth::auth_register_begin,
             auth::auth_register_resend,
             auth::auth_register_verify,
@@ -36,6 +41,14 @@ pub fn run() {
             billing::billing_activate,
             billing::billing_topup_tiers,
             billing::billing_recharge,
+            byok::byok_get_config,
+            byok::byok_save_config,
+            byok::byok_clear_key,
+            byok::byok_test,
+            byok::byok_generate,
+            contributor::contributor_set,
+            contributor::telemetry_system_info,
+            contributor::telemetry_send,
             datapack::datapack_list_saves,
             datapack::datapack_deploy,
             datapack::datapack_default_saves_dir,
@@ -50,6 +63,11 @@ pub fn run() {
             admin::admin_set_policy,
             admin::admin_impersonate,
             admin::admin_health,
+            admin::admin_reports,
+            admin::admin_resolve_report,
+            admin::admin_get_words,
+            admin::admin_set_words,
+            admin::admin_telemetry,
             admin::admin_restart,
             plaza::plaza_categories,
             plaza::plaza_list,
@@ -60,6 +78,7 @@ pub fn run() {
             plaza::plaza_favorite,
             plaza::plaza_download,
             plaza::plaza_comment,
+            plaza::plaza_report,
             plaza::plaza_delete_comment,
             window::window_toggle_fullscreen,
             window::window_is_fullscreen,

@@ -202,7 +202,23 @@ button {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  background: linear-gradient(160deg, rgba(10, 22, 48, 0.36), rgba(5, 13, 32, 0.47));
+  /*
+   * 【这是"玻璃透明度"滑杆真正该改的地方】它之前是写死的两个 rgba，
+   * 跟 --glass-tint-alpha（那根滑杆驱动的变量）完全没关系——滑杆拖到哪
+   * 这块背景都纹丝不动。而这块 .app-shell 才是用户**几乎全程看得见**的
+   * 那片玻璃，弹窗只在临时打开的那几秒存在。所以滑杆"感觉调了没反应"，
+   * 是因为它确实只影响了用户大部分时间根本没打开的东西。
+   *
+   * 两个系数（0.36/0.47 换算成对 --glass-tint-alpha 的比例）是照着这两个
+   * 原始硬编码值反推的：clarity 默认 0.55 时 --glass-tint-alpha ≈ 0.353，
+   * 代入下面这两个系数应该分别还原出 0.36 和 0.47——默认外观不变，
+   * 只是现在真的接上了开关。
+   */
+  background: linear-gradient(
+    160deg,
+    rgba(10, 22, 48, calc(var(--glass-tint-alpha) * 1.02)),
+    rgba(5, 13, 32, calc(var(--glass-tint-alpha) * 1.33))
+  );
   box-shadow:
     0 32px 80px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
@@ -243,7 +259,12 @@ button {
   background-repeat: no-repeat;
   background-position: center, center, center;
   background-size: min(30vw, 30vh) auto, min(150vw, 150vh) min(150vw, 150vh), cover;
-  filter: blur(26px) saturate(150%) brightness(1.02);
+  /*
+   * 模糊半径也跟 clarity 走一点点（26px 基准，clarity 每往清透端多 0.1 就
+   * 少糊 1px，幅度控制得很轻）——这是**静态**滤镜，只在内容或这条声明本身
+   * 变化时重算一次，不是每帧重算，改这个不会把前面测过的那份帧率数据作废。
+   */
+  filter: blur(calc(26px - 6px * var(--clarity))) saturate(150%) brightness(1.02);
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1150,6 +1171,26 @@ button#primary,
   background: rgba(122, 162, 255, 0.22);
 }
 
+/*
+ * 能点的行才配手型指针和按下反馈——`.data-table` 也用来展示不能点的
+ * 只读列表（EffectEditor 里那张"选中效果组内容"就是纯展示，靠旁边的
+ * 按钮删行），给那些行也画上手型指针会显得"这行能点"，点了却什么都不发生。
+ * `.row-select` 只挂在真的绑了 @click 选中这一行的 `<tr>` 上。
+ *
+ * `transform` 加在 `<tr>` 上：虽然 CSS 规范里 table-row 是否吃 transform
+ * 早年有过分歧，但 Chromium（这个项目主要目标的 WebView2/桌面浏览器）早就
+ * 支持了，且它是纯绘制层的偏移，不会影响表格布局——即便某个引擎不支持，
+ * 效果只是"没有这一下按压反馈"，不会露出任何布局错误。
+ */
+.data-table tbody tr.row-select {
+  cursor: pointer;
+  transition: background 180ms ease, transform 90ms ease-out;
+}
+
+.data-table tbody tr.row-select:active {
+  transform: scale(0.99);
+}
+
 .effect-group-table {
   min-height: 150px;
 }
@@ -1519,7 +1560,13 @@ button#primary,
  */
 .picker-grid button {
   display: flex;
-  min-height: 46px;
+  /* 【调小过字号 + 换算过这个高度】原来用 pt 做单位（10.5pt/8.5pt ≈ 14/11.3px），
+     行高又没有显式钉死，靠各引擎的默认行高兜底——Chromium 和 Windows 上
+     WebView2 的默认行高不完全一样，够不着最坏情况就会出现"最上面/最下面
+     那一丝被裁掉"。现在两行字体都换成 px（不同引擎对 px 的换算没有歧义）、
+     显式给了 line-height，min-height 也按"两行字体 + gap + 上下 padding"
+     精确加总再留一点余量算出来，不是拍的。 */
+  min-height: 50px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.02));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
@@ -1527,15 +1574,16 @@ button#primary,
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 3px;
+  padding: 9px 10px;
   text-align: left;
 }
 
 .picker-grid button .picker-name {
   overflow: hidden;
   width: 100%;
-  font-size: 10.5pt;
+  font-size: 12px;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1544,7 +1592,8 @@ button#primary,
   overflow: hidden;
   width: 100%;
   color: rgba(174, 183, 218, 0.66);
-  font-size: 8.5pt;
+  font-size: 10px;
+  line-height: 1.3;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1874,6 +1923,42 @@ button#primary,
   width: clamp(180px, 20vw, 240px);
 }
 
+/*
+ * 模式切换过渡。
+ *
+ * 手动 / AI / 万灯集 / 管理四个面板之前切过去是硬切——没有任何过渡，AI 模式
+ * 除外（它有一整套"点灯"入场特效，见下面 .ai-card.igniting）。其余三个只是
+ * 单纯"内容消失、内容出现"，显得很生硬。
+ *
+ * 【不用 Vue 的 <Transition>】手动模式那块内容早就明确弃用过它——哪怕只给
+ * enter 定义 CSS、leave 什么都不写，<Transition> 组件本身也会用两次
+ * requestAnimationFrame 做双缓冲切 class，这个 JS 层面的开销在低性能设备上
+ * 会被放大成好几帧的延迟（见 App.vue 里那段实测注释）。这里改用纯 CSS
+ * animation：v-show 从 display:none 切回来、v-if 挂载新节点，都会让浏览器
+ * 把动画当"第一次播放"重新跑一遍，不需要一行 JS。
+ *
+ * 幅度和时长跟 AI 模式"点灯"那组用的 ai-content-rise 是同一种手感
+ * （见 ai-content-rise），只是没有逐项错峰、也没有炉火特效——那是 AI 模式
+ * 专属的品牌细节，其余模式没必要跟着有。
+ */
+@keyframes mode-content-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.split-layout,
+.preview-card,
+.admin-card,
+.plaza-card {
+  animation: mode-content-rise 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
 /* ---------------- AI 模式面板 ---------------- */
 .ai-card {
   position: relative;
@@ -2151,6 +2236,12 @@ button#primary,
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* 充值档位隐藏时激活码是面板里唯一的东西，上面那条分隔线就多余了 */
+.ai-license.solo {
+  padding-top: 0;
+  border-top: none;
+}
+
 .ai-license-row {
   display: flex;
   gap: 8px;
@@ -2161,6 +2252,50 @@ button#primary,
   min-width: 0;
   font-family: Consolas, "Courier New", monospace;
   letter-spacing: 0.5px;
+}
+
+/* ---- 【测试版】使用自己的 API key ---- */
+.ai-byok {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-byok-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9pt;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.ai-byok-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.ai-byok-grid input {
+  min-width: 0;
+}
+
+.ai-byok-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-byok-using {
+  font-size: 9pt;
+  color: var(--muted, #93a4c8);
+}
+
+@media (max-width: 520px) {
+  .ai-byok-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ai-head {
@@ -2418,6 +2553,28 @@ button#primary,
     min-width: 0;
   }
 
+  /*
+   * 【修这个】窄屏下 .app-shell 从"固定一屏高、内部裁切"变成"跟内容一起
+   * 长高、让整个页面滚"（上面那几条），但 .shell-frost 还是按`position:
+   * absolute` 相对 .app-shell 定位、尺寸钉死在"一屏高 + 模糊余量"——.app-shell
+   * 长到好几屏之后，霜化背景只盖住了最上面那一屏，往下滚一段就滚出了它的
+   * 覆盖范围，底下露出的是完全没加霜化处理的 .app-shell 原始背景，看起来
+   * 像是"清晰度滑杆突然生效了/变透明了"，其实是背景没跟着页面一起变长。
+   *
+   * 改成 `position: fixed` 之后它相对**视口**定位，不管页面滚多远、
+   * .app-shell 实际有多高，它都稳稳盖住当前这一屏——跟 .app-bg（最底层的灯
+   * 光背景）用的是同一个思路。定位数值也要跟着从"相对 .app-shell 内边距盒"
+   * 换成"相对视口"：不用再减那个 margin(14)+border(1)=15px 的偏移，
+   * 只留给模糊采样的余量（-80px）。
+   */
+  .shell-frost {
+    position: fixed;
+    top: -80px;
+    left: -80px;
+    width: calc(100vw + 160px);
+    height: calc(100vh + 160px);
+  }
+
   .top-card {
     flex-wrap: wrap;
     min-width: 0;
@@ -2530,8 +2687,17 @@ button#primary,
 .auth-card {
   display: flex;
   width: clamp(300px, 42vw, 420px);
+  max-height: calc(100vh - 48px);
   flex-direction: column;
   gap: 12px;
+}
+
+/* .picker-card 是给"内容自己有个滚动的网格"的弹窗设计的，整块卡片本身
+   overflow:hidden（动画变形要靠它裁边角）。登录弹窗没有那样一块内部网格，
+   内容长了（比如注册屏那几条提示 + 表单）就得让 .picker-inner 自己滚动，
+   不然会被 .picker-card 的 overflow:hidden 直接裁掉、够不着。 */
+.auth-inner {
+  overflow-y: auto;
 }
 
 .auth-head {
@@ -2695,16 +2861,19 @@ button#primary,
 
 /* ---------------------------------------------------------------- 万灯集
  *
- * 弹窗本体沿用 .modal-card（同一套玻璃/圆角/折射），这里只加内部布局。
- * 尺寸比普通弹窗大得多——它是个"逛"的界面，不是个确认框。
+ * 和「手动模式」「AI 模式」「管理」并列的第四个模式页，不再是浮在最上面的
+ * 弹窗——跟 .admin-card 一样，就是主界面里的一块 .card，宽度、滚动都交给
+ * 外层布局，不再自己钉 width/max-height。
  */
 .plaza-card {
-  width: min(920px, 94vw);
-  max-width: none;
-  max-height: 86vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 内边距和 .ai-card 一致。.card 本身不带内边距，漏了这条内容会直接贴着圆角边框，
+     标题「万灯集」和「← 返回列表」看起来像被窗口左边切掉了一截。 */
+  min-height: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
   text-align: left;
 }
 
@@ -2720,16 +2889,6 @@ button#primary,
   gap: 8px;
   margin: 0;
 }
-.plaza-lantern {
-  /* 灯笼是这个功能的标志物，给它一点暖光，和背景那盏呼应 */
-  filter: drop-shadow(0 0 10px rgba(255, 176, 76, 0.55));
-}
-.plaza-kind {
-  font-size: 13px;
-  font-weight: 400;
-  opacity: 0.6;
-}
-
 .plaza-filters {
   display: flex;
   flex-wrap: wrap;
@@ -2798,16 +2957,6 @@ button#primary,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.plaza-item-excerpt {
-  font-size: 12px;
-  opacity: 0.6;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 .plaza-item-meta {
   display: flex;
@@ -2958,6 +3107,10 @@ button#primary,
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 同 .plaza-card：.card 不带内边距，要自己给 */
+  min-height: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
   text-align: left;
 }
 
@@ -3150,7 +3303,13 @@ button#primary,
   opacity: 0.75;
 }
 .tpl-grid { max-height: 40vh; }
-.tpl-plaza-btn { align-self: flex-start; }
+
+/* 同 .auth-inner 那条注释：.picker-card 整块 overflow:hidden 是给动画变形
+   裁边角用的，内置模板+收藏两个网格各自 40vh 封顶之后仍可能比 80vh 高，
+   这时候得让 .tpl-inner 自己滚动，不然多出来的部分会被裁掉够不着。 */
+.tpl-inner {
+  overflow-y: auto;
+}
 
 /* ================================================================
  * 液态玻璃：向 WWDC26 那一版靠拢的四件事
@@ -3302,4 +3461,373 @@ button#primary,
   width: 100%;
   accent-color: #ffc45c;
   cursor: pointer;
+}
+
+
+/* ================================================================
+ * 共享的"从按钮里飞出来"弹窗动画的样式。
+ *
+ * 【为什么在全局，不在某个组件的 <style scoped> 里】这套 class
+ * （.picker-scrim/.picker-card/.picker-brand/.picker-brand-label/.picker-inner）
+ * 最早长在 ItemPickerModal 里，但它描述的是"弹窗怎么从按钮变出来"这件通用
+ * 的事，不是"选择物品"这个功能专属的。Vue 的 <style scoped> 会给规则加一个
+ * data-v-xxx 属性选择器，只在**那一个组件**渲染出的 DOM 里生效——如果留在
+ * 原处，AuthModal/模板库弹窗这些想复用同一套动画的组件，就算写出一模一样的
+ * class 名也套不上这份样式，样式和动画就分家了。所以搬到这里，配合
+ * src/logic/morphPopup.ts 的 useMorphPopup()，谁都能接。
+ * ================================================================ */
+
+/* 弹窗展开/收回时框体本身由 onEnter/onLeave 里的 element.animate() 直接接管
+   left/top/width/height/border-radius，这里只需要让内容能在框体变形的过程中
+   独立淡入淡出（picker-inner），并且外层不会在收缩阶段把网格内容露出来。 */
+/* 遮罩从 .modal-overlay 上剥出来，单独一层。
+   过渡元素本身不能再带底色和模糊——它是弹窗的父节点，动它的 opacity 会把
+   弹窗一起按住（见 onEnter 里那段注释）。 */
+.picker-overlay {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.picker-scrim {
+  position: absolute;
+  background: rgba(3, 8, 22, 0.42);
+  opacity: 0;
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  inset: 0;
+  /* 点空白处关闭靠父元素的 @click.self，遮罩不能把点击吃掉 */
+  pointer-events: none;
+}
+
+.picker-card {
+  /* 品牌色覆盖层按这块卡片定位；变形时这里会被改成 fixed，同样是包含块。 */
+  position: relative;
+  overflow: hidden;
+}
+
+/* 品牌色覆盖层：铺满整块弹窗，展开的第一段里它就是"那颗按钮"的脸。
+   inset:0 + border-radius:inherit 让它天然跟着弹窗一起变形，不用另外追位置。
+   平时 opacity:0 且 pointer-events:none，不参与任何交互。 */
+.picker-brand {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  opacity: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+.picker-brand-label {
+  white-space: nowrap;
+}
+
+.picker-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ================================================================
+ * 设置（贡献者计划 / 反馈 / 版本）
+ * ================================================================ */
+
+.settings-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 12px;
+  flex: none;
+}
+
+.settings-card {
+  width: min(620px, 92vw);
+  max-width: none;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.settings-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-size: 11pt;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--muted, #93a4c8);
+  font-size: 9pt;
+  line-height: 1.6;
+}
+
+.settings-note-small {
+  font-size: 8.5pt;
+}
+
+.settings-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-align: left;
+  font-weight: 400;
+}
+
+.settings-level.active {
+  border-color: rgba(125, 211, 252, 0.6);
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.settings-level-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-reward {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 196, 92, 0.16);
+  color: #ffd479;
+  font-size: 8.5pt;
+}
+
+.settings-current {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.18);
+  color: #9fdcff;
+  font-size: 8.5pt;
+}
+
+.settings-level-desc {
+  color: var(--muted, #93a4c8);
+  font-size: 8.5pt;
+  line-height: 1.55;
+}
+
+.settings-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 209, 138, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 209, 138, 0.08);
+  font-size: 9.5pt;
+  line-height: 1.6;
+}
+
+.settings-confirm p {
+  margin: 0;
+}
+
+.settings-delta {
+  color: #ffd479;
+  font-weight: 700;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.settings-actions-wrap {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.settings-version {
+  color: var(--muted, #93a4c8);
+  font-size: 8.5pt;
+}
+
+/* ---- EULA 里的贡献者选择 ---- */
+.eula-contributor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.eula-contributor-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.eula-reward {
+  margin-left: 4px;
+  color: #ffd479;
+  font-size: 8.5pt;
+}
+
+.eula-contributor-confirm {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 209, 138, 0.1);
+  font-size: 9pt;
+  line-height: 1.6;
+}
+
+/* ---- 万灯集：举报 / 审核中 ---- */
+.plaza-review {
+  background: rgba(255, 157, 157, 0.16);
+  color: #ff9d9d;
+}
+
+.plaza-report-btn {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.plaza-report-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 157, 157, 0.08);
+  font-size: 9pt;
+}
+
+.plaza-report-form input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---- 管理页：举报审核 / 贡献数据 ---- */
+.admin-report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-report-content {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 8.5pt;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.admin-telemetry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-telemetry-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-weight: 400;
+}
+
+.admin-telemetry-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9pt;
+}
+
+/* ---- 有新版本提示条 ---- */
+.update-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 16px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 14px;
+  background: rgba(8, 22, 48, 0.82);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), var(--glass-edge, none);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  font-size: 9.5pt;
+  transform: translateX(-50%);
+}
+
+.update-bar .primary-btn {
+  padding: 5px 12px;
+}
+
+.update-bar-close {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  font-size: 12pt;
+  line-height: 1;
+}
+
+.update-bar-enter-active,
+.update-bar-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.update-bar-enter-from,
+.update-bar-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-bar-enter-active,
+  .update-bar-leave-active {
+    transition: opacity 0.15s ease;
+  }
+  .update-bar-enter-from,
+  .update-bar-leave-to {
+    transform: translateX(-50%);
+  }
 }

@@ -357,7 +357,14 @@ function apply(el: HTMLElement) {
 
   // 越清透，折射越明显（Apple 的 Clear 变体就是折射强、染色弱）；
   // 越厚的面板折射带越宽。
-  const strengthScale = 0.55 + 0.9 * c;
+  //
+  // 【这两个系数是唯一的调节入口】最早的版本是 0.55+0.9c / 0.3+0.7c——用户反馈
+  // "玻璃折射太多了"，尤其是色散：边缘那圈彩边太显眼，看久了像脏了一样。
+  // 位移量整体收窄大约三成，色散收得更狠（快一半），因为色散是纯装饰性的
+  // "清透感"味道，而位移量还承担着"这是块厚玻璃"的形状暗示，不能砍太狠。
+  // 改这两个数就能压住全应用所有面板的折射，不用去逐个 CSS 块里改
+  // --glass-strength/--glass-aberration。
+  const strengthScale = 0.4 + 0.65 * c;
   const depthScale = 0.85 + 0.35 * t;
 
   const filter = lensFilter({
@@ -367,7 +374,7 @@ function apply(el: HTMLElement) {
     depth: Math.max(1, Math.round(safeDepth * depthScale)),
     strength: num(cs, "--glass-strength", 44) * strengthScale,
     // 色散是"清透玻璃"才有的味道。压到 0 附近时它只会让边缘发脏。
-    chromaticAberration: num(cs, "--glass-aberration", 0) * (0.3 + 0.7 * c),
+    chromaticAberration: num(cs, "--glass-aberration", 0) * (0.16 + 0.4 * c),
   });
 
   // 大面板模糊更强、小控件更轻，这是"厚度"最直观的那一半。

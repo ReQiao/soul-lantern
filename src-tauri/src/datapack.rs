@@ -5,18 +5,31 @@
 //! 玩家自己在游戏里执行 `/reload` 加载，全程没有任何非官方手段。
 //!
 //! 一次性命令 vs 循环命令：
-//!   - commands（一次性）写进 soul:run，玩家自己执行一次 `/function soul:run` 触发。
-//!   - loop_commands（需要每 tick 侦测的，如箭矢/掉落物落地检测）写进 soul:tick，
+//!   - commands（一次性）写进 soul_lantern:run，玩家自己执行一次
+//!     `/function soul_lantern:run` 触发。
+//!   - loop_commands（需要每 tick 侦测的，如箭矢/掉落物落地检测）写进 soul_lantern:tick，
 //!     并通过 `data/minecraft/tags/function/tick.json` 挂到原版的 tick 函数标签上——
 //!     `/reload` 之后自动每 tick 执行，不需要玩家再手动放一个循环命令方块。
 //!     这是这次改造的关键点：凡是「持续侦测」的组合技，一键部署即可生效。
+//!
+//! 每次部署都是**整包替换**：先删掉整个 `PACK_DIR` 再重写。见 `datapack_deploy`。
 
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 
-/// datapack 的命名空间与函数名，最终对应游戏内的 `/function soul:run`。
-const NAMESPACE: &str = "soul";
+/// datapack 的命名空间与函数名，最终对应游戏内的 `/function soul_lantern:run`。
+///
+/// 【定下来就别再改】玩家会把 `/function soul_lantern:run` 抄进命令方块、写进
+/// 自己的其它 datapack。客户端没有自动更新，改一次名就是让所有人手里那些引用
+/// 同时失效。以前叫 `soul`——太短太常见，和别的 datapack / 模组撞命名空间的概率
+/// 不低，撞了之后谁覆盖谁取决于加载顺序，表现是"部署成功但函数是别人的"。
+/// 趁还没正式发版改成和 `PACK_DIR` 同源的 `soul_lantern`。
+const NAMESPACE: &str = "soul_lantern";
+/// 改名之前用过的命名空间。部署时只要整包删掉重写，旧的自然就没了；
+/// 单独留着这个常量是为了测试里能断言"旧命名空间确实被清干净"。
+#[cfg(test)]
+const LEGACY_NAMESPACE: &str = "soul";
 const FUNCTION: &str = "run";
 const TICK_FUNCTION: &str = "tick";
 const PACK_DIR: &str = "soul_lantern_commands";
@@ -32,9 +45,9 @@ pub struct SaveInfo {
 pub struct DeployResult {
     /// datapack 写入的目录。
     pub pack_path: String,
-    /// 一次性命令条数（写进 soul:run，需要玩家手动触发一次）。
+    /// 一次性命令条数（写进 soul_lantern:run，需要玩家手动触发一次）。
     pub command_count: usize,
-    /// 循环命令条数（写进 soul:tick 并挂 tick.json，`/reload` 后自动生效）。
+    /// 循环命令条数（写进 soul_lantern:tick 并挂 tick.json，`/reload` 后自动生效）。
     pub loop_command_count: usize,
     /// 玩家需要在游戏内执行的命令：/reload 必做；run_command 只有 command_count>0 时才需要，
     /// 循环部分 /reload 后自动生效，不需要玩家再做任何事。
@@ -151,6 +164,17 @@ pub fn datapack_deploy(
     }
 
     let pack_dir = save.join("datapacks").join(PACK_DIR);
+
+    // 【整包替换，先删后写】以前是逐个文件覆盖写、从不清理，于是：上一次部署带了
+    // 循环命令、这一次没带，旧的 tick.mcfunction 和 tick.json 就一直留在存档里，
+    // `/reload` 之后**继续每 tick 执行上一次的侦测逻辑**——用户以为换掉了，其实
+    // 旧效果还在跑，而且界面上完全看不出来。命名空间改名之后，旧的 data/soul/
+    // 也会同理残留。这个目录整个都是本工具生成的、名字也是我们独占的，直接删掉
+    // 重建才符合"每次部署 = 这一次的内容"。
+    if pack_dir.exists() {
+        fs::remove_dir_all(&pack_dir).map_err(|e| format!("清理旧的 datapack 失败：{e}"))?;
+    }
+
     // 1.21 起函数目录由 functions 改名为 function（单数）；两处都写，跨版本都能加载。
     let function_dirs = [
         pack_dir.join("data").join(NAMESPACE).join("function"),
@@ -301,7 +325,7 @@ mod tests {
 
         assert_eq!(res.command_count, 2);
         assert_eq!(res.loop_command_count, 0);
-        assert_eq!(res.run_command, Some("/function soul:run".to_string()));
+        assert_eq!(res.run_command, Some("/function soul_lantern:run".to_string()));
 
         let pack = save.join("datapacks").join(PACK_DIR);
         let meta: serde_json::Value =
@@ -310,11 +334,11 @@ mod tests {
         assert_eq!(meta["pack"]["supported_formats"]["min_inclusive"], 41);
 
         // 前导斜杠必须去掉，否则游戏加载 function 时会报错
-        let body = fs::read_to_string(pack.join("data/soul/function/run.mcfunction")).unwrap();
+        let body = fs::read_to_string(pack.join("data/soul_lantern/function/run.mcfunction")).unwrap();
         assert_eq!(body, "give @s minecraft:mace 1\nsay hi\n");
 
         // 旧版单复数目录都要写
-        assert!(pack.join("data/soul/functions/run.mcfunction").is_file());
+        assert!(pack.join("data/soul_lantern/functions/run.mcfunction").is_file());
 
         fs::remove_dir_all(&save).unwrap();
     }
@@ -381,7 +405,7 @@ mod tests {
         assert_eq!(res.run_command, None);
 
         let pack = save.join("datapacks").join(PACK_DIR);
-        let tick_body = fs::read_to_string(pack.join("data/soul/function/tick.mcfunction")).unwrap();
+        let tick_body = fs::read_to_string(pack.join("data/soul_lantern/function/tick.mcfunction")).unwrap();
         assert!(tick_body.contains("summon minecraft:tnt"));
         assert!(tick_body.contains("run kill @s"));
 
@@ -389,10 +413,10 @@ mod tests {
         let tag: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(pack.join("data/minecraft/tags/function/tick.json")).unwrap())
                 .unwrap();
-        assert_eq!(tag["values"][0], "soul:tick");
+        assert_eq!(tag["values"][0], "soul_lantern:tick");
         // 旧版单复数目录都要写
         assert!(pack.join("data/minecraft/tags/functions/tick.json").is_file());
-        assert!(pack.join("data/soul/functions/tick.mcfunction").is_file());
+        assert!(pack.join("data/soul_lantern/functions/tick.mcfunction").is_file());
 
         fs::remove_dir_all(&save).unwrap();
     }
@@ -403,11 +427,66 @@ mod tests {
         let res = deploy_for_test_full(&save, &["say hello"], &["say tick"], "java_26_2_plus").unwrap();
         assert_eq!(res.command_count, 1);
         assert_eq!(res.loop_command_count, 1);
-        assert_eq!(res.run_command, Some("/function soul:run".to_string()));
+        assert_eq!(res.run_command, Some("/function soul_lantern:run".to_string()));
 
         let pack = save.join("datapacks").join(PACK_DIR);
-        assert!(pack.join("data/soul/function/run.mcfunction").is_file());
-        assert!(pack.join("data/soul/function/tick.mcfunction").is_file());
+        assert!(pack.join("data/soul_lantern/function/run.mcfunction").is_file());
+        assert!(pack.join("data/soul_lantern/function/tick.mcfunction").is_file());
+        fs::remove_dir_all(&save).unwrap();
+    }
+
+    /// 上一次部署带循环命令、这一次不带：旧的 tick 必须消失。
+    /// 以前是逐个文件覆盖写，旧的 tick.json 会留着，`/reload` 后继续每 tick 跑上一次的逻辑。
+    #[test]
+    fn redeploy_without_loop_removes_previous_tick() {
+        let save = temp_save("redeploy-tick");
+        deploy_for_test_full(&save, &["say once"], &["say every tick"], "java_26_2_plus").unwrap();
+        let pack = save.join("datapacks").join(PACK_DIR);
+        assert!(pack.join("data/minecraft/tags/function/tick.json").is_file());
+
+        deploy_for_test(&save, &["say second"], "java_26_2_plus").unwrap();
+        assert!(
+            !pack.join("data/minecraft/tags/function/tick.json").exists(),
+            "第二次部署没有循环命令，旧的 tick.json 必须被清掉"
+        );
+        assert!(!pack.join("data/minecraft/tags/functions/tick.json").exists());
+        assert!(!pack.join("data/soul_lantern/function/tick.mcfunction").exists());
+        let body = fs::read_to_string(pack.join("data/soul_lantern/function/run.mcfunction")).unwrap();
+        assert_eq!(body, "say second\n");
+        fs::remove_dir_all(&save).unwrap();
+    }
+
+    /// 改名前部署过的存档：旧命名空间 `soul` 的函数和 tick 标签不能残留。
+    #[test]
+    fn redeploy_cleans_up_legacy_namespace() {
+        let save = temp_save("legacy-ns");
+        let pack = save.join("datapacks").join(PACK_DIR);
+        // 模拟老版本留下来的包
+        let legacy = pack.join("data").join(LEGACY_NAMESPACE).join("function");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("tick.mcfunction"), "say old loop\n").unwrap();
+        let tags = pack.join("data/minecraft/tags/function");
+        fs::create_dir_all(&tags).unwrap();
+        fs::write(tags.join("tick.json"), r#"{"values":["soul:tick"]}"#).unwrap();
+
+        deploy_for_test(&save, &["say new"], "java_26_2_plus").unwrap();
+        assert!(!pack.join("data").join(LEGACY_NAMESPACE).exists(), "旧命名空间目录必须清掉");
+        assert!(!tags.join("tick.json").exists(), "旧的 tick 标签还挂着就会继续跑旧循环");
+        assert!(pack.join("data/soul_lantern/function/run.mcfunction").is_file());
+        fs::remove_dir_all(&save).unwrap();
+    }
+
+    /// 整包替换只能动我们自己的那个目录，同存档里玩家装的其它 datapack 不能被误删。
+    #[test]
+    fn redeploy_leaves_other_datapacks_alone() {
+        let save = temp_save("other-packs");
+        let other = save.join("datapacks").join("someone_elses_pack");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("pack.mcmeta"), "{}").unwrap();
+
+        deploy_for_test(&save, &["say a"], "java_26_2_plus").unwrap();
+        deploy_for_test(&save, &["say b"], "java_26_2_plus").unwrap();
+        assert!(other.join("pack.mcmeta").is_file());
         fs::remove_dir_all(&save).unwrap();
     }
 

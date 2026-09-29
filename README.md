@@ -149,28 +149,6 @@ npm install
 npm run tauri dev
 ```
 
-## 全本地跑一遍（录视频 / 断网演示）
-
-AI 模式平时要连自建服务器。想在本机把整条链路跑通——注册、登录、找回密码、
-AI 生成、兑换码——用这个：
-
-```powershell
-npm run demo                # 真实 AI，需要 AI_API_KEY
-node scripts/demo-local.mjs --mock      # 完全离线，AI 回固定内容
-node scripts/demo-local.mjs --keep      # 保留上一次的账本，不清空余额和账号
-node scripts/demo-local.mjs --no-app    # 只起服务端，客户端自己开
-```
-
-它会现场签一张 127.0.0.1 的证书、用 `SMS_KIND=log` 起一个本地服务端
-（验证码直接打在终端里，不发真短信），再把客户端的两个逃生舱环境变量
-指过去。**源码一个字不改**，界面就是当前最新的这一版。
-
-服务端二进制不在这个仓库里，按顺序找 `SOUL_LANTERN_SERVER_BIN` 环境变量、
-`../soul-lantern-server/target/…`、`./server/target/…`。
-
-默认每次都是全新账本，方便重拍。证书、私钥、账本、随机 pepper 全部落在
-`.demo-local/`，退出时删掉，且已被 `.gitignore` 挡住。
-
 ## 打包 Windows 安装包
 
 ```powershell
@@ -245,3 +223,22 @@ localStorage.removeItem('soul-lantern-gate')        // 恢复正常
 - 优化模板系统
 - 优化动画与交互细节
 - 增加更多命令组件
+
+## 许可与授权
+
+Copyright (C) 2026 ReQiao
+
+本客户端按 **GNU Affero General Public License v3.0 或更高版本**（AGPL-3.0-or-later）授权，
+完整条款见仓库根目录的 [`LICENSE`](./LICENSE)。你可以自由使用、修改和再分发它，
+前提是保留版权声明、并以同一许可分发衍生作品。
+
+### AI 模式依赖的服务端不在本仓库内
+
+手动模式完全在本地运行，不联网。AI 模式需要连接开发者自行运营的服务端——
+**那个服务端是独立作品，不属于本仓库，也不以 AGPL 授权**。本仓库只包含客户端。
+
+### 灵魂币与激活码买的是什么
+
+灵魂币和激活码购买的是**AI 服务的调用额度**（用于支付上游大模型的真实调用成本），
+**不是软件许可**。本客户端本身按 AGPL-3.0 免费授权，不出售、也无法出售。
+不购买任何额度也可以完整使用手动模式。

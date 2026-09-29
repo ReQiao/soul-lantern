@@ -7,7 +7,7 @@
 // 见迁移计划里"catalog 数据在客户端和服务器各保留一份"的决定。
 //
 // 用法：node scripts/gen-server-catalog.mjs
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -75,7 +75,28 @@ for (const [name, rows] of tables) {
   out += "\n";
 }
 
-const outPath = path.join(root, "server/src/give/catalog_data.rs");
+// 【跨仓库】服务端在 2025 年拆成了独立的私有仓库，不在这个仓库里，所以这个脚本
+// 的输出目标也跟着跑到仓库外面去了。默认按「两个仓库并排放在同一个父目录下」来找，
+// 放在别处就用环境变量指过去：
+//
+//   SOUL_LANTERN_SERVER_REPO=/path/to/soul-lantern-server node scripts/gen-server-catalog.mjs
+//
+// 以前这里写死 `server/src/give/catalog_data.rs`（仓库内路径），拆仓之后那个目录
+// 根本不存在——脚本会默不作声地在客户端仓库里造出一个没人要的孤儿文件，而你以为
+// 服务端的表已经更新了。所以下面宁可直接报错也不静默生成。
+const serverRepo =
+  process.env.SOUL_LANTERN_SERVER_REPO ?? path.join(root, "..", "soul-lantern-server");
+const outDir = path.join(serverRepo, "src/give");
+if (!existsSync(outDir)) {
+  console.error(
+    `找不到服务端仓库的 src/give 目录：${outDir}\n` +
+      `服务端是独立仓库，请把它 clone 到 ${path.join(root, "..")} 下，` +
+      `或者用 SOUL_LANTERN_SERVER_REPO 环境变量指定它的位置。`,
+  );
+  process.exit(1);
+}
+
+const outPath = path.join(outDir, "catalog_data.rs");
 writeFileSync(outPath, out, "utf8");
 
 for (const [name, rows] of tables) {

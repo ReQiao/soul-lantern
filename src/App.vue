@@ -14,11 +14,15 @@ import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
-import PlazaModal from "./components/PlazaModal.vue";
+import PlazaPanel from "./components/PlazaPanel.vue";
 import AdminPanel from "./components/AdminPanel.vue";
+import SettingsModal from "./components/SettingsModal.vue";
 import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
+import { useMorphPopup } from "./logic/morphPopup";
 import { installFullscreen } from "./logic/fullscreen";
 import { playIntro } from "./logic/intro";
+import { maybeSendSession, reportError } from "./logic/telemetry";
+import { DISPLAY_VERSION } from "./logic/version";
 // 背景里那盏灯。放 src/assets 而不是 public：走 Vite 的资源管线会带内容哈希，
 // 换图之后不会因为浏览器缓存显示旧的。
 import lanternUrl from "./assets/soul-lantern.png";
@@ -26,6 +30,7 @@ import {
   auth,
   authModalMode,
   authModalOpen,
+  authModalOrigin,
   gated as authGated,
   openAuth,
   pendingAiSwitch,
@@ -59,7 +64,10 @@ import {
   isJava1212Family,
   getModernProfile,
   normalizeForm,
+  NewerTemplateError,
   pairText,
+  parseStoredForm,
+  serializeForm,
   type AttributeRow,
   type BlockLimitRow,
   type EnchantRow,
@@ -82,7 +90,8 @@ const animationKey = "give-generator-animation";
 // 重新要求同意一遍，而不是永远沿用当初点过的那次同意。
 // v2：加了账号体系之后要收手机号，按《个人信息保护法》必须单独告知并取得同意。
 // 只改文案不改这个数字的话，已经点过同意的老用户永远看不到新条款，那份告知等于没做。
-const EULA_VERSION = "2";
+// v4：加了贡献者计划（第七节）；测试阶段不开放充值，第四节跟着改了。
+const EULA_VERSION = "4";
 const eulaKey = `give-generator-eula-accepted-v${EULA_VERSION}`;
 const eulaAccepted = ref(localStorage.getItem(eulaKey) === "true");
 const eulaScrolledToEnd = ref(false);
@@ -93,6 +102,124 @@ function checkEulaScrolled() {
   if (!el) return;
   // 容差 8px：字体渲染/滚动条误差，卡在最后几像素不该拦着用户点不了同意。
   if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) eulaScrolledToEnd.value = true;
+}
+
+// ---------------- 贡献者计划：EULA 里先选，登录后生效 ----------------
+//
+// EULA 在登录之前，而等级和奖励是记在账号上的，所以这里只把选择存在本地，
+// 登录后（下面那个 watch）再去服务端生效。只会「升」不会「降」：换了个已经是
+// 高级贡献者的账号登录，不该因为这台电脑上当初选了「贡献者」就把它降下来。
+const CONTRIBUTOR_PENDING_KEY = "soul-lantern-contributor-pending";
+const eulaContributor = ref(0);
+/** 选了贡献者之后点同意，先弹一次确认（第二重确认就是这一步）。 */
+const eulaConfirming = ref(false);
+const EULA_LEVEL_NAMES = ["不贡献", "贡献者", "高级贡献者"];
+
+function readPendingContributor(): number {
+  try {
+    return Number(localStorage.getItem(CONTRIBUTOR_PENDING_KEY) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function onEulaAgree() {
+  if (eulaContributor.value > 0 && !eulaConfirming.value) {
+    eulaConfirming.value = true;
+    return;
+  }
+  try {
+    if (eulaContributor.value > 0) localStorage.setItem(CONTRIBUTOR_PENDING_KEY, String(eulaContributor.value));
+    else localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+  } catch {
+    // 存不下就当没选，设置页里还能再选
+  }
+  acceptEula();
+}
+
+let applyingPending = false;
+watch(
+  () => [auth.value.loggedIn, auth.value.contributorLevel] as const,
+  async ([loggedIn, level]) => {
+    if (!loggedIn) return;
+    const pending = readPendingContributor();
+    if (pending > level && !applyingPending) {
+      applyingPending = true;
+      try {
+        const v = await invoke<{ level: number; delta: number }>("contributor_set", { level: pending, dryRun: false });
+        localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+        await refreshAuth();
+        showToast(
+          `已成为${EULA_LEVEL_NAMES[v.level]}${v.delta > 0 ? `，获得 ${v.delta} 灵魂币` : ""}，谢谢！`,
+          3500,
+        );
+      } catch {
+        // 下次登录态刷新时再试
+      } finally {
+        applyingPending = false;
+      }
+      return;
+    }
+    if (pending && pending <= level) localStorage.removeItem(CONTRIBUTOR_PENDING_KEY);
+    maybeSendSession();
+  },
+  { immediate: true },
+);
+
+// ---------------- 设置 ----------------
+const settingsOpen = ref(false);
+const settingsBtnEl = ref<HTMLElement | null>(null);
+
+// ---------------- 有新版本 ----------------
+//
+// 没有自动更新，测试期间会频繁发版。服务端 .env 里配 LATEST_CLIENT / LATEST_DISPLAY /
+// DOWNLOAD_URL，比自己新就在顶部提示一条（只提醒不拦截——拦截是 MIN_CLIENT 的事）。
+// 同一个版本关掉之后不再提示，出了更新的版本才再提示。
+interface UpdateInfo {
+  version: string;
+  display: string;
+  url: string;
+}
+const UPDATE_DISMISS_KEY = "soul-lantern-update-dismissed";
+const update = ref<UpdateInfo | null>(null);
+
+async function checkUpdate() {
+  if (!isTauri()) return;
+  try {
+    const info = await invoke<UpdateInfo | null>("auth_update_available");
+    if (!info) return;
+    let dismissed = "";
+    try {
+      dismissed = localStorage.getItem(UPDATE_DISMISS_KEY) ?? "";
+    } catch {
+      // 读不到就当没关过
+    }
+    if (dismissed !== info.version) update.value = info;
+  } catch {
+    // 检查失败不打扰
+  }
+}
+
+function dismissUpdate() {
+  if (update.value) {
+    try {
+      localStorage.setItem(UPDATE_DISMISS_KEY, update.value.version);
+    } catch {
+      // 存不下就下次启动再提示一次
+    }
+  }
+  update.value = null;
+}
+
+async function openUpdate() {
+  const url = update.value?.url;
+  if (!url) return;
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch {
+    showToast(`打不开链接，请手动访问：${url}`, 6000);
+  }
 }
 
 function acceptEula() {
@@ -139,8 +266,6 @@ const fileInput = ref<HTMLInputElement | null>(null);
  * 而且收藏项还要能取消收藏、能看是谁做的。一个 `<select>` 塞不下这些。
  */
 const templateModalOpen = ref(false);
-/** 万灯集弹窗。手动模式和 AI 模式各自打开它，靠 kind 区分。 */
-const plazaOpen = ref(false);
 
 /**
  * 模板库里"我收藏的"那一栏。
@@ -191,9 +316,23 @@ async function useFavoriteTemplate(id: string, title: string) {
 }
 const itemPickerOpen = ref(false);
 const pickBtnEl = ref<HTMLButtonElement | null>(null);
-/** 手动填表 / AI 自然语言 / 管理页，共用顶部的版本选择。 */
-type Mode = "manual" | "ai" | "admin";
+const templateBtnEl = ref<HTMLButtonElement | null>(null);
+const { onEnter: onTplEnter, onLeave: onTplLeave } = useMorphPopup({
+  getOrigin: () => templateBtnEl.value,
+  getAnimate: () => animationEnabled.value,
+});
+/** 手动填表 / AI 自然语言 / 万灯集 / 管理页，共用顶部的版本选择。 */
+type Mode = "manual" | "ai" | "plaza" | "admin";
 const mode = ref<Mode>("manual");
+
+/**
+ * 万灯集刚打开时该看手动模板还是 AI 模板：跟着"进万灯集之前最后待的是哪个
+ * 内容模式"走，纯图方便——页面里随时能用它自己的切换器换到另一侧。
+ */
+const lastContentMode = ref<"manual" | "ai">("manual");
+watch(mode, (m) => {
+  if (m === "manual" || m === "ai") lastContentMode.value = m;
+});
 
 /**
  * 管理页的入口只在**当前会话已经解锁过管理权限**时出现。
@@ -213,10 +352,10 @@ const showAdminTab = computed(() => auth.value.adminVerified);
  * 登录成功后由 onAuthed 补上这次切换，那时 AiPanel 的 active 从 false 变 true，
  * 点灯动画照常触发——用户看到的顺序是「登录 → 灯亮 → 进 AI」，比反过来顺。
  */
-function selectMode(next: Mode) {
+function selectMode(next: Mode, event?: Event) {
   if (next === "ai" && authGated.value) {
     pendingAiSwitch.value = true;
-    openAuth("login");
+    openAuth("login", event);
     // 顺手再确认一次门禁开关：如果是"启动那一刻连不上服务器"导致的误判，
     // 这一次刷新就能纠正过来，用户不用重启软件。
     void recheckAuth().then(() => {
@@ -389,7 +528,7 @@ watch(
 
 const autosaveTimer = window.setInterval(() => {
   if (!dirty.value) return;
-  localStorage.setItem(autosaveKey, JSON.stringify(form));
+  localStorage.setItem(autosaveKey, serializeForm(form));
   dirty.value = false;
   status.value = "状态：已自动保存";
 }, 1000);
@@ -531,6 +670,7 @@ onMounted(() => {
   // 登录态在这一层拉，不放 AiPanel 里：门禁判断发生在这儿的模式切换按钮上，
   // 拉取要早于用户可能点到「AI 模式」的那一刻。
   void recheckAuth();
+  void checkUpdate();
   // 液态玻璃：按选择器认领所有浮层，后来 v-if 挂上来的弹窗也会自动接管。
   // 不支持 SVG 滤镜的引擎（macOS 的 WKWebView）里它直接空转，交给 CSS 降级。
   // 灯的图片路径是 Vite 打过哈希的，CSS 写不出来，运行时注入给 .shell-frost 用。
@@ -556,7 +696,7 @@ function loadAutosave(): GiveForm {
   const saved = localStorage.getItem(autosaveKey);
   if (!saved) return createDefaultForm();
   try {
-    const form = normalizeForm(JSON.parse(saved));
+    const form = parseStoredForm(JSON.parse(saved));
     status.value = "状态：已恢复上次内容";
     return form;
   } catch {
@@ -683,7 +823,7 @@ function pruneUnsupportedOptionsForVersion() {
 }
 
 function applyFormData(value: unknown) {
-  Object.assign(form, normalizeForm(value));
+  Object.assign(form, parseStoredForm(value));
   pruneUnsupportedOptionsForVersion();
   refreshPreviewIfGenerated();
 }
@@ -700,7 +840,7 @@ async function copy() {
 }
 
 async function saveTemplate() {
-  const payload = JSON.stringify(form, null, 2);
+  const payload = serializeForm(form, 2);
   const filename = `${(form.templateName.trim() || "未命名模板").replace(/[\\/:*?"<>|]/g, "_")}.json`;
 
   if (isTauri()) {
@@ -770,15 +910,33 @@ function useManualTemplate(payload: string, title: string) {
     status.value = `状态：已载入万灯集模板 ${title}`;
     showToast(`已载入「${title}」`);
   } catch (err) {
-    showMessage(
-      "这份模板载入失败",
-      `内容不是有效的表单数据：${err instanceof Error ? err.message : String(err)}`,
-      true,
-    );
+    // 版本太新不是"内容坏了"，是该升级软件了——两种情况给两句不同的话。
+    const message =
+      err instanceof NewerTemplateError
+        ? err.message
+        : `内容不是有效的表单数据：${err instanceof Error ? err.message : String(err)}`;
+    showMessage("这份模板载入失败", message, true);
   }
 }
 
+/** AiPanel 里 userText/usePrompt 的类型都靠 defineExpose 推出来，模板 ref
+ *  拿到的就是这个形状——不用另外手写一份接口来描述"暴露了什么"。 */
+const aiPanelRef = ref<InstanceType<typeof AiPanel> | null>(null);
+
+/** 万灯集"手动模板"那一侧点了"用这个"：载入表单，顺手切回手动模式看效果。 */
+function useManualFromPlaza(payload: string, title: string) {
+  useManualTemplate(payload, title);
+  mode.value = "manual";
+}
+
+/** 万灯集"AI 模板"那一侧点了"用这个"：塞进 AI 输入框，切回 AI 模式。 */
+function useAiFromPlaza(payload: string, title: string) {
+  aiPanelRef.value?.usePrompt(payload, title);
+  mode.value = "ai";
+}
+
 function showMessage(title: string, message: string, error = false) {
+  if (error) reportError("message", `${title}：${message}`);
   modal.title = title;
   modal.message = message;
   modal.error = error;
@@ -786,6 +944,8 @@ function showMessage(title: string, message: string, error = false) {
 }
 
 function showToast(message: string, duration = 1800) {
+  // 失败类提示也算一次错误记录（大部分操作失败都是走 toast 告诉用户的）
+  if (/失败|出错|错误|无法/.test(message)) reportError("toast", message);
   toastText.value = message;
   if (toastTimer !== undefined) window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -878,27 +1038,41 @@ function textOptions(items: string[]): SelectOption[] {
           只有当你主动使用 AI 模式时，才需要注册账号并联网。下面第三、四节专门讲这件事，请重点看。
         </p>
 
-        <h3>一、版权与授权</h3>
+        <h3>一、软件授权（开源）</h3>
         <p>
-          本软件（含全部源代码、界面设计，以及"自然语言 → AI 意图 → 确定性指令构建器"这一实现方式）
-          版权归开发者所有，受《中华人民共和国著作权法》及相关法律法规保护，未经明示授予的权利均予保留。
+          本客户端是<strong>自由软件</strong>，版权归 ReQiao 所有，按
+          <strong>GNU Affero 通用公共许可证第 3 版或更高版本（AGPL-3.0-or-later）</strong>授权。
+          在遵守该许可证的前提下，你可以自由地运行、研究、修改和再分发本软件，
+          <strong>包括查看和使用它的源代码</strong>——不需要另外取得开发者许可。
         </p>
         <p>
-          开发者仅授予你在自有设备上运行本软件、使用其生成的游戏内指令的权利；
-          你因安装或使用本软件，不因此获得对源代码本身的任何权利。
+          许可证要求你在再分发（含分发修改版）时保留版权声明、并以同一许可证授权衍生作品。
+          完整条款以随程序分发的 LICENSE 文件为准，源代码在
+          <span class="eula-mono">github.com/ReQiao/soul-lantern</span>。
+        </p>
+        <p>
+          <strong>AI 模式连接的服务端不属于本软件</strong>：它是开发者自行运营的独立作品，
+          不随本客户端分发，也不以 AGPL 授权。本协议第三节起讲的都是使用那个服务的条款。
         </p>
 
-        <h3>二、禁止行为</h3>
-        <p>未经开发者书面许可，你不得从事以下行为：</p>
+        <h3>二、使用服务时的禁止行为</h3>
+        <p>
+          本节约束的是<strong>你对开发者所运营服务的使用</strong>，不是对软件本身的限制——
+          软件本身的权利以第一节的 AGPL 授权为准。使用 AI 模式时你不得：
+        </p>
         <ul>
-          <li>对本软件进行反编译、反汇编、逆向工程，或以其他方式还原其源代码；</li>
-          <li>复制、传播、出售、二次分发本软件的源代码或其实质性部分（包括但不限于指令构建逻辑）；</li>
-          <li>移除、隐藏或篡改本软件内的版权声明、作者信息或本协议；</li>
           <li>
             以脚本、自动化程序或其他非正常手段批量注册账号、批量索取短信验证码、
-            绕过计费或干扰服务器正常运行。
+            绕过计费或干扰服务器正常运行；
           </li>
+          <li>使用他人的手机号注册，或将账号出借、出租、转售给他人；</li>
+          <li>移除、隐藏或篡改本软件内的版权声明与许可证文件（这同时也是 AGPL 本身的要求）。</li>
         </ul>
+        <p>
+          <strong>关于灵魂币与激活码</strong>：它们购买的是<strong>AI 服务的调用额度</strong>
+          （用于支付上游大模型的真实调用成本），<strong>不是软件许可</strong>。
+          本客户端按 AGPL 免费授权，不出售也无法出售；不购买任何额度，手动模式依然完整可用。
+        </p>
 
         <h3>三、账号与手机号（个人信息处理告知）</h3>
         <p>
@@ -923,7 +1097,7 @@ function textOptions(items: string[]): SelectOption[] {
         <p>
           <strong>你的权利</strong>：你可以随时查询、更正你的账号信息，或要求注销账号并删除全部相关数据。
           注销后余额与消费记录一并清除且不可恢复。目前的办理渠道是本项目的
-          GitHub Issues（<span class="eula-mono">github.com/ReQiao/give-command-generator</span>）。
+          GitHub Issues（<span class="eula-mono">github.com/ReQiao/soul-lantern</span>）。
         </p>
         <p>
           <strong>未成年人</strong>：如果你未满 14 周岁，请在监护人陪同下阅读本协议，
@@ -937,8 +1111,14 @@ function textOptions(items: string[]): SelectOption[] {
         </p>
         <p>
           AI 生成按<strong>真实调用量</strong>折算扣除灵魂币，不是固定单价。
-          当前处于免费测试阶段，充值不会真实扣款；未来若开放付费，会在充值页面明确标示，
+          当前处于测试阶段，<strong>暂不开放充值和激活码</strong>，灵魂币只能通过注册赠送、
+          反馈奖励和贡献者计划获得；未来若开放付费，会在充值页面明确标示，
           <strong>不会在你不知情的情况下扣费</strong>。
+        </p>
+        <p>
+          测试期间可以选择<strong>「使用自己的 API key」</strong>：此时你的 key 加密保存在本机，
+          需求描述由你的电脑直接发给你选择的模型服务商，<strong>key 不经过开发者的服务器</strong>；
+          服务器只接收 AI 的输出用来生成指令。该功能正式版会关闭。
         </p>
         <p>
           AI 的输出可能出错。软件已经用确定性构建器兜住语法合法性，
@@ -964,16 +1144,52 @@ function textOptions(items: string[]): SelectOption[] {
           本协议如有实质性修改，软件会在下次启动时再次向你完整展示并请求同意，
           不会沿用你此前的同意。
         </p>
+        <h3>七、贡献者计划（自愿，可随时更改）</h3>
+        <p>
+          你可以<strong>自愿</strong>选择把一些使用数据发给开发者，帮忙发现问题、改进 AI 生成，
+          并获得一次性的灵魂币奖励。<strong>默认不加入</strong>，不加入不影响任何功能。
+        </p>
+        <ul>
+          <li><strong>不贡献</strong>——不上报任何数据。</li>
+          <li>
+            <strong>贡献者</strong>（奖励 1000 灵魂币）——上报<strong>电脑架构信息</strong>
+            （系统版本、CPU、内存、屏幕尺寸、软件版本）和<strong>出错时的操作记录</strong>
+            （最近点了哪些按钮、错误信息）。<strong>不记录你在输入框里打的字</strong>，
+            也不收集主机名、系统用户名、硬件序列号。
+          </li>
+          <li>
+            <strong>高级贡献者</strong>（奖励 2000 灵魂币，含贡献者那一档）——在贡献者的基础上，
+            再上报 <strong>AI 模式里你输入的提示词和 AI 的输出结果</strong>。
+          </li>
+        </ul>
+        <p>
+          数据只用于排查问题和改进本软件，存放在开发者的服务器上，<strong>不出售、不共享给第三方</strong>。
+          你可以<strong>随时</strong>在「设置」里降级或退出，退出后不再上报；
+          <strong>升级后 30 天内降级或退出，会收回那一档的奖励</strong>（余额不够的话扣到 0）。
+          奖励每个账号每档只发一次。需要删除已上报的数据，请通过第三节的渠道联系。
+        </p>
         <p>
           点击下方"我已阅读并同意"，即表示你已完整阅读、理解并同意接受本协议的全部条款，
           <strong>并同意开发者按第三节所述的目的和范围处理你的手机号等个人信息</strong>；
           如不同意，请勿使用本软件。
         </p>
       </div>
+      <div class="eula-contributor">
+        <span class="field-label">贡献者计划（第七节，可选）</span>
+        <div class="eula-contributor-options">
+          <label v-for="(name, lvl) in EULA_LEVEL_NAMES" :key="lvl" class="check-line">
+            <input v-model="eulaContributor" type="radio" :value="lvl" @change="eulaConfirming = false" />
+            {{ name }}<span v-if="lvl === 1" class="eula-reward">+1000</span><span v-if="lvl === 2" class="eula-reward">+2000</span>
+          </label>
+        </div>
+        <p v-if="eulaConfirming" class="eula-contributor-confirm">
+          你选择了<strong>{{ EULA_LEVEL_NAMES[eulaContributor] }}</strong>：将按第七节上报{{ eulaContributor === 2 ? "电脑架构信息、出错时的操作记录，以及 AI 提示词和输出" : "电脑架构信息和出错时的操作记录" }}。登录后生效，奖励发到账号上。确认的话再点一次「确认并同意」。
+        </p>
+      </div>
       <div class="eula-actions">
         <button type="button" @click="declineEula">不同意（退出）</button>
-        <button type="button" class="primary-btn" :disabled="!eulaScrolledToEnd" @click="acceptEula">
-          {{ eulaScrolledToEnd ? "我已阅读并同意" : "请先滑到底部" }}
+        <button type="button" class="primary-btn" :disabled="!eulaScrolledToEnd" @click="onEulaAgree">
+          {{ !eulaScrolledToEnd ? "请先滑到底部" : eulaConfirming ? "确认并同意" : "我已阅读并同意" }}
         </button>
       </div>
     </div>
@@ -1005,8 +1221,15 @@ function textOptions(items: string[]): SelectOption[] {
             role="tab"
             :aria-selected="mode === 'ai'"
             :class="{ active: mode === 'ai' }"
-            @click="selectMode('ai')"
+            @click="selectMode('ai', $event)"
           >AI 模式</button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'plaza'"
+            :class="{ active: mode === 'plaza' }"
+            @click="selectMode('plaza')"
+          >万灯集</button>
           <!-- 只有解锁过管理权限的会话才看得到这个 tab。退出登录/重新登录之后
                它会自己消失，因为 adminVerified 是跟着服务端会话走的。 -->
           <button
@@ -1018,6 +1241,20 @@ function textOptions(items: string[]): SelectOption[] {
             @click="selectMode('admin')"
           >管理</button>
         </div>
+        <button
+          ref="settingsBtnEl"
+          type="button"
+          class="settings-btn"
+          aria-label="设置"
+          title="设置"
+          @click="settingsOpen = true"
+        >
+          <!-- 只放图标：顶部这一栏在默认窗口宽度下本来就挤，文字按钮会把右边工具条挤成竖排 -->
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
       </div>
       <!--
         两套顶部工具条一直同时挂载，用 grid 叠在同一格里（跟下面 split-layout/ai-card
@@ -1040,8 +1277,7 @@ function textOptions(items: string[]): SelectOption[] {
         <div class="top-form" :class="{ 'stack-hidden': mode !== 'manual' }" :inert="mode !== 'manual'">
           <span class="field-label">模板名<InfoTip text="保存模板时使用这个名称作为 JSON 文件名。" /></span>
           <input v-model="form.templateName" class="template-input" />
-          <button type="button" @click="templateModalOpen = true">模板库</button>
-          <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
+          <button ref="templateBtnEl" type="button" @click="templateModalOpen = true">模板库</button>
           <button type="button" @click="saveTemplate">保存模板</button>
           <button type="button" @click="loadTemplate">读取模板</button>
           <button type="button" :disabled="!canUndo" title="Ctrl+Z" @click="undo">撤销</button>
@@ -1058,12 +1294,28 @@ function textOptions(items: string[]): SelectOption[] {
          :active 单独传 mode==='ai'，给 AiPanel 用来判断"这次是不是刚切进来"，
          好在每次切入时重放点灯特效——面板本身常驻挂载，不能再靠组件创建时机触发动画了。 -->
     <AiPanel
+      ref="aiPanelRef"
       v-show="mode === 'ai'"
       :active="mode === 'ai'"
       :version="form.version"
       :animate="animationEnabled"
       @toast="showToast"
       @update:version="form.version = $event"
+    />
+
+    <!-- 万灯集。用 v-if 而不是 v-show：每次进来都要重新拉一遍列表（收藏/点赞/
+         发布随时在变，缓存住只会让人对着旧数字逛），不像手动/AI 面板那样
+         需要在切走的时候保住一份正在编辑的状态。
+         manualPayload/aiPayload 两份都传：具体发布哪一份由页面里的 kind
+         切换决定，这边不该替用户决定"发布的时候到底是哪一份"。 -->
+    <PlazaPanel
+      v-if="mode === 'plaza'"
+      :manual-payload="serializeForm(form)"
+      :ai-payload="aiPanelRef?.userText ?? ''"
+      :default-kind="lastContentMode"
+      @use-manual="useManualFromPlaza"
+      @use-ai="useAiFromPlaza"
+      @toast="showToast"
     />
 
     <!-- 管理页。用 v-if 而不是 v-show：它是极少数人极少数时候才进的地方，
@@ -1156,6 +1408,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.enchantments"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedEnchantRow === index, flash: rowFlash[`enchant-${index}`] }"
                     @click="selectedEnchantRow = index"
                   >
@@ -1187,6 +1440,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.attributes"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedAttrRow === index, flash: rowFlash[`attr-${index}`] }"
                     @click="selectedAttrRow = index"
                   >
@@ -1217,6 +1471,7 @@ function textOptions(items: string[]): SelectOption[] {
                   <tr
                     v-for="(row, index) in form.blockLimits"
                     :key="index"
+                    class="row-select"
                     :class="{ selected: selectedBlockRow === index, flash: rowFlash[`block-${index}`] }"
                     @click="selectedBlockRow = index"
                   >
@@ -1300,7 +1555,8 @@ function textOptions(items: string[]): SelectOption[] {
                     <tr
                       v-for="(row, index) in form.toolRules"
                       :key="index"
-                      :class="{ selected: selectedToolRow === index, flash: rowFlash[`tool-${index}`] }"
+                      class="row-select"
+                    :class="{ selected: selectedToolRow === index, flash: rowFlash[`tool-${index}`] }"
                       @click="selectedToolRow = index"
                     >
                       <td>{{ displayBlocks(row.blocks) }}</td>
@@ -1371,6 +1627,8 @@ function textOptions(items: string[]): SelectOption[] {
   <AuthModal
     v-model:open="authModalOpen"
     :initial-mode="authModalMode"
+    :origin="authModalOrigin"
+    :animate="animationEnabled"
     @authed="onAuthed"
     @toast="showToast"
   />
@@ -1382,14 +1640,35 @@ function textOptions(items: string[]): SelectOption[] {
   -->
   <NoticeModal :notices="pendingNotices" @dismiss="pendingNotices.shift()" />
 
+  <!-- 有新版本：固定在顶部中间，不占主界面的网格布局 -->
+  <Transition name="update-bar">
+    <div v-if="update && eulaAccepted" class="update-bar" role="status">
+      <span>有新版本 <strong>{{ update.display }}</strong>（当前 {{ DISPLAY_VERSION }}）</span>
+      <button v-if="update.url" type="button" class="primary-btn" @click="openUpdate">去下载</button>
+      <button type="button" class="update-bar-close" aria-label="关闭" @click="dismissUpdate">×</button>
+    </div>
+  </Transition>
+
+  <SettingsModal
+    v-model:open="settingsOpen"
+    :origin="settingsBtnEl"
+    :animate="animationEnabled"
+    @toast="showToast"
+  />
+
   <!--
     模板库：内置模板 + 从万灯集收藏来的。
     原来这里是个下拉框，装不下"收藏项还要能看作者、能取消收藏"这些东西。
   -->
   <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="templateModalOpen" class="modal-overlay" @click.self="templateModalOpen = false">
-        <div class="modal-card tpl-card">
+    <Transition :css="false" @enter="onTplEnter" @leave="onTplLeave">
+      <div v-if="templateModalOpen" class="modal-overlay picker-overlay" @click.self="templateModalOpen = false">
+        <div class="picker-scrim"></div>
+        <div class="modal-card picker-card tpl-card">
+          <div class="picker-brand" aria-hidden="true">
+            <span class="picker-brand-label"></span>
+          </div>
+          <div class="picker-inner tpl-inner">
           <div class="plaza-head">
             <h2>模板库</h2>
             <button class="picker-close" type="button" aria-label="关闭" @click="templateModalOpen = false">×</button>
@@ -1422,7 +1701,7 @@ function textOptions(items: string[]): SelectOption[] {
               class="plaza-item"
               @click="useFavoriteTemplate(f.id, f.title)"
             >
-              <span class="plaza-item-icon">{{ f.icon || "🏮" }}</span>
+              <span class="plaza-item-icon">{{ f.icon || "📄" }}</span>
               <span class="plaza-item-body">
                 <span class="plaza-item-title">{{ f.title }}</span>
                 <span class="plaza-item-meta">
@@ -1437,28 +1716,9 @@ function textOptions(items: string[]): SelectOption[] {
             但内置模板照常能用——手动模式本来就不需要联网。）
           </p>
 
-          <button
-            class="primary-btn tpl-plaza-btn"
-            type="button"
-            @click="templateModalOpen = false; plazaOpen = true"
-          >
-            🏮 去万灯集逛逛
-          </button>
+          </div>
         </div>
       </div>
     </Transition>
   </Teleport>
-
-  <!--
-    万灯集。手动模式和 AI 模式共用这一个弹窗实例，靠 kind 区分——两边的
-    列表/详情/发布流程完全一样，只有 payload 的含义不同。
-    currentPayload 传当前这份内容，用户点"发布我的"时打包的就是它。
-  -->
-  <PlazaModal
-    v-model:open="plazaOpen"
-    kind="manual"
-    :current-payload="JSON.stringify(form)"
-    @use="useManualTemplate"
-    @toast="showToast"
-  />
 </template>

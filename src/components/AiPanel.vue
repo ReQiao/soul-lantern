@@ -17,6 +17,8 @@ import type { GiveVersion } from "../logic/builder";
 // App.vue 的模式切换按钮上，两处各存一份 ref 会立刻不同步。
 import {
   auth,
+  byokEnabled,
+  contextRounds,
   desktop,
   displayName,
   gated,
@@ -24,8 +26,8 @@ import {
   openAuth,
   recheckAuth,
 } from "../logic/auth";
+import { reportError } from "../logic/telemetry";
 import CustomSelect from "./CustomSelect.vue";
-import PlazaModal from "./PlazaModal.vue";
 import DeployPanel from "./DeployPanel.vue";
 import InfoTip from "./InfoTip.vue";
 
@@ -146,15 +148,26 @@ interface TopupTier {
   yuan: number;
   coins: number;
 }
+/**
+ * 充值 / 激活码开没开。测试阶段两者都关：服务端的免费充值口默认不注册，
+ * 档位点了只会报错；激活码也还没开始卖。关着时充值档位整块隐藏，激活码框
+ * 保留但禁用、写明原因——比藏起来更好，用户知道以后是从这里兑换的。
+ * 正式开卖时改成 true。
+ */
+const BILLING_OPEN = false;
+const BILLING_CLOSED_TEXT = "AI 模式正在测试中，无法激活";
+
 const balance = ref<number | null>(null);
 const topupTiers = ref<TopupTier[]>([]);
 const showTopup = ref(false);
 
 // refreshAuth 现在住在 logic/auth.ts 里，它不知道余额条这回事，
 // 所以余额跟随登录态的同步放在这里做。
+// 也跟着 auth.value.balance 走：设置页改贡献者等级会发 / 扣币，刷新登录态之后
+// 这里要跟着变，不然余额条显示的还是旧数。
 watch(
-  () => auth.value.loggedIn,
-  (loggedIn) => {
+  () => [auth.value.loggedIn, auth.value.balance] as const,
+  ([loggedIn]) => {
     if (loggedIn) balance.value = auth.value.balance;
   },
   { immediate: true },
@@ -215,7 +228,7 @@ const activating = ref(false);
 
 async function activate() {
   const key = licenseKey.value.trim();
-  if (!key || activating.value) return;
+  if (!BILLING_OPEN || !key || activating.value) return;
   activating.value = true;
   try {
     const st = await invoke<AccountView>("billing_activate", { licenseKey: key });
@@ -253,9 +266,11 @@ onMounted(() => {
 /**
  * 大模型调用现在统一转发到自建服务器（key 只在服务器上，见
  * src-tauri/src/remote.rs 顶部注释），但模型选哪个仍然交给用户——价格/
- * 上下文/靠谱程度差很多：Plus 最稳，Long 性价比最高，Flash 最便宜，
- * Max 贵但能力更强，DeepSeek 是 Flash 档，便宜但不算强。留空/选不到就用
- * 服务器 .env 里 AI_MODEL 的默认值。
+ * 上下文/靠谱程度差很多。下拉里只写模型名称，不写「稳 / 便宜」这类说明（价格会变，
+ * 说明写死在客户端迟早和实际对不上）。
+ *
+ * 【去掉了「服务器默认」和 qwen3.8-max】默认选中第一项 qwen3.7-plus，请求里总是带上
+ * 明确的模型名；Max 太贵，测试期不开放（服务端 model_prices 里有也选不到）。
  *
  * 【价格】以前这里写着 Flash「注意 32k 阶梯跳价」——那是旧版通义的计费方式，
  * qwen3.8-flash 已经取消阶梯，全程 0.8/2.7 每百万 token，所以这句提示删掉了。
@@ -264,12 +279,12 @@ onMounted(() => {
  *
  * 【模型 ID】价目表现在只保留控制台上实际在架的型号，服务端 policy.rs
  * 删掉了别名键（qwen-plus/qwen-long/qwen3.7-flash 已经不再单独注册），
- * 所以下面这几个 value 必须和 policy.rs 里的键名逐字一致——填错/填一个
- * 已下架的名字不会报错，只会静默落到 default_model_price 按错的价格扣钱。
+ * 所以下面这几个 value 必须和服务端 policy.json 里 model_prices 的键名逐字一致——
+ * 服务端现在有模型白名单：不在 model_prices 里（也不是 .env 的 AI_MODEL）的模型
+ * 直接拒绝，界面上会显示「不支持的模型」。
  *
- * 【deepseek-v4-pro 已下架】换成了 deepseek-v4-flash-0731。这不是改名，
- * 是型号本身被替换了。新型号是峰谷定价（百炼公告 2026-08-17 起），服务端
- * 按忙时价（更贵的那档）算，价格已经在 policy.json 里备好了（3/9，缓存 0.3）。
+ * 【deepseek-v4.1-flash】替换了 deepseek-v4-flash-0731（更早之前是 deepseek-v4-pro）。
+ * 服务端 policy.json 的 model_prices 里要有同名的一条，由运营者在管理页「价格配置」里改。
  *
  * 【glm-5.3】它不是通义的模型。服务端目前是单 endpoint 单 key（ai_proxy.rs
  * 的 AI_ENDPOINT/AI_API_KEY），所以这一项只有在服务器的 AI_ENDPOINT 确实
@@ -277,32 +292,144 @@ onMounted(() => {
  * 上游的「模型不存在」错误。价格已经在 policy.json 里备好了（8/28，缓存 2）。
  */
 const MODEL_OPTIONS = [
-  { label: "服务器默认", value: "" },
-  { label: "Qwen Plus（稳）", value: "qwen3.7-plus" },
-  { label: "Qwen Max（旗舰，贵）", value: "qwen3.8-max" },
-  { label: "Qwen Flash（最便宜）", value: "qwen3.8-flash" },
-  { label: "Qwen Long（长上下文，性价比高）", value: "qwen-long-latest" },
-  { label: "DeepSeek V4 Flash（便宜）", value: "deepseek-v4-flash-0731" },
-  { label: "GLM-5.3（需服务端支持）", value: "glm-5.3" },
+  { label: "qwen3.7-plus", value: "qwen3.7-plus" },
+  { label: "qwen3.8-flash", value: "qwen3.8-flash" },
+  { label: "qwen-long-latest", value: "qwen-long-latest" },
+  { label: "deepseek-v4.1-flash", value: "deepseek-v4.1-flash" },
+  { label: "glm-5.3", value: "glm-5.3" },
 ] as const;
-const apiModel = ref<string>("");
+const apiModel = ref<string>(MODEL_OPTIONS[0].value);
+
+// ---------------- 【测试版】使用自己的 API key ----------------
+//
+// 本地拿用户自己的 key 调用户自己的模型，只把 AI 输出交给服务端构建器（见
+// src-tauri/src/byok.rs）。key 从不经过我们的服务器。服务端 policy 里一键关，
+// 关掉之后 byokEnabled 是 false，这一整块都不显示，也不会走这条路。
+// 正式商业化时服务端关掉接口、这块代码一并删除。
+
+interface ByokConfig {
+  endpoint: string;
+  model: string;
+  hasKey: boolean;
+  keyHint: string;
+}
+
+const BYOK_PRESETS = [
+  { label: "OpenAI", value: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { label: "DeepSeek", value: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { label: "通义千问（百炼）", value: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { label: "自定义 / 中转", value: "", model: "" },
+] as const;
+
+const BYOK_TOGGLE_KEY = "soul-lantern-byok-on";
+function readByokToggle(): boolean {
+  try {
+    return localStorage.getItem(BYOK_TOGGLE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+const byokOn = ref(readByokToggle());
+watch(byokOn, (on) => {
+  try {
+    localStorage.setItem(BYOK_TOGGLE_KEY, on ? "1" : "0");
+  } catch {
+    // 存不下就每次重新勾，不影响功能
+  }
+});
+/** 真正走自带 key：服务端开着 + 用户勾了。服务端一关，勾没勾都回到付费通道。 */
+const usingByok = computed(() => byokEnabled.value && byokOn.value);
+
+const byokPreset = ref<string>("");
+const byokEndpoint = ref("");
+const byokModel = ref("");
+const byokKey = ref("");
+const byokSaved = ref<ByokConfig | null>(null);
+const byokStatus = ref("");
+const byokBusy = ref(false);
+
+watch(byokPreset, (v) => {
+  const preset = BYOK_PRESETS.find((p) => p.value === v);
+  if (!preset || !preset.value) return;
+  byokEndpoint.value = preset.value;
+  if (!byokModel.value.trim()) byokModel.value = preset.model;
+});
+
+async function loadByokConfig() {
+  if (!desktop) return;
+  try {
+    const cfg = await invoke<ByokConfig>("byok_get_config");
+    byokSaved.value = cfg;
+    byokEndpoint.value = cfg.endpoint;
+    byokModel.value = cfg.model;
+    byokPreset.value = BYOK_PRESETS.find((p) => p.value && p.value === cfg.endpoint)?.value ?? "";
+  } catch {
+    byokSaved.value = null;
+  }
+}
+
+async function saveByok() {
+  byokBusy.value = true;
+  byokStatus.value = "";
+  try {
+    byokSaved.value = await invoke<ByokConfig>("byok_save_config", {
+      endpoint: byokEndpoint.value,
+      model: byokModel.value,
+      key: byokKey.value.trim() || null,
+    });
+    byokEndpoint.value = byokSaved.value.endpoint;
+    byokKey.value = "";
+    byokStatus.value = "已保存（key 加密存在本机，不会上传）";
+  } catch (err) {
+    byokStatus.value = String(err);
+  } finally {
+    byokBusy.value = false;
+  }
+}
+
+async function testByok() {
+  byokBusy.value = true;
+  byokStatus.value = "测试中…";
+  try {
+    byokStatus.value = await invoke<string>("byok_test");
+  } catch (err) {
+    byokStatus.value = String(err);
+  } finally {
+    byokBusy.value = false;
+  }
+}
+
+async function clearByokKey() {
+  try {
+    byokSaved.value = await invoke<ByokConfig>("byok_clear_key");
+    byokStatus.value = "已删除本机保存的 key";
+  } catch (err) {
+    byokStatus.value = String(err);
+  }
+}
+
+watch(byokEnabled, (on) => {
+  if (on) void loadByokConfig();
+}, { immediate: true });
+
+const userText = ref("");
 
 /**
- * 万灯集（AI 模板那一侧）。
- *
- * 和手动模式共用同一个组件，只是 `kind` 传 "ai"：那边的 payload 是表单 JSON，
- * 这边是一段提示词。发布时打包的就是输入框里现在这段文字。
+ * 万灯集"AI 模板"那一侧点了"用这个"之后，App.vue 通过模板 ref 调这个函数
+ * 把内容塞进输入框——万灯集现在是和这个面板并列的独立模式，不再是从这个
+ * 面板里弹出来的小窗口，所以这边不再自己挂一份 PlazaPanel 实例，只留一个
+ * 供外部调用的入口（见文件末尾的 defineExpose）。
  */
-const plazaOpen = ref(false);
-
 function usePrompt(payload: string, title: string) {
   userText.value = payload;
   emit("toast", `已载入「${title}」，可以直接生成，也可以改改再生成`);
 }
-
-const userText = ref("");
 const busy = ref(false);
 const errorText = ref("");
+// AI 模式的失败原因（上游报错、解析失败、余额不足…）进贡献者的错误记录。
+watch(errorText, (text) => {
+  if (text) reportError(usingByok.value ? "ai:byok" : "ai", text);
+});
 const explanation = ref("");
 /** 一次性命令：可以直接复制粘贴到聊天栏，也可以走一键部署。 */
 const commands = ref<string[]>([]);
@@ -318,11 +445,20 @@ const failures = ref<string[]>([]);
 
 /**
  * 多轮上下文：允许"在上一次生成结果基础上继续修改"（比如"改成用箭"），
- * 而不用重新把整句需求描述一遍。封顶3轮是刻意的——通义千问上下文有限，
- * 轮数越多越容易跑偏/幻觉，而且接口是无状态的，每轮都要把历史重新整个
- * 发一遍，轮数越多单次调用费的 token 越多，3轮是防幻觉和控成本的折中。
+ * 而不用重新把整句需求描述一遍。要封顶——轮数越多越容易跑偏/幻觉，而且接口是
+ * 无状态的，每轮都要把历史重新整个发一遍，轮数越多单次调用费的 token 越多。
+ *
+ * 上限由服务端下发（/v1/version，可按模型分别配，长上下文模型可以给得更多），
+ * 服务端也会按同一个数裁剪 history，所以这里只决定界面何时提示"开始新对话"。
+ * 拿不到（老服务端 / 连不上）就退回 3。
  */
-const MAX_CONTEXT_ROUNDS = 3;
+const FALLBACK_CONTEXT_ROUNDS = 3;
+const maxContextRounds = computed(() => {
+  const cfg = contextRounds.value;
+  if (!cfg) return FALLBACK_CONTEXT_ROUNDS;
+  const model = apiModel.value.trim();
+  return (model && cfg.modelRounds[model]) || cfg.defaultRounds || FALLBACK_CONTEXT_ROUNDS;
+});
 interface ChatTurn {
   role: "user" | "assistant";
   content: string;
@@ -350,7 +486,13 @@ function newConversation() {
 const bedrockUnsupported = computed(() => props.version === "bedrock");
 
 const canGenerate = computed(
-  () => desktop && !bedrockUnsupported.value && !busy.value && userText.value.trim().length > 0,
+  () =>
+    desktop &&
+    !bedrockUnsupported.value &&
+    !busy.value &&
+    userText.value.trim().length > 0 &&
+    // 自带 key 模式下没存 key 就别让点，点了也只会报"还没有填 API key"
+    (!usingByok.value || !!byokSaved.value?.hasKey),
 );
 
 const examples = [
@@ -364,9 +506,9 @@ async function generate() {
   if (!canGenerate.value) return;
 
   // 已经聊满3轮：这一次不再带历史，直接当新对话处理，而不是拒绝用户的请求。
-  if (round.value >= MAX_CONTEXT_ROUNDS) {
+  if (round.value >= maxContextRounds.value) {
     history.value = [];
-    emit("toast", `已达到连续对话上限（${MAX_CONTEXT_ROUNDS}轮），这次将开始新的对话`);
+    emit("toast", `已达到连续对话上限（${maxContextRounds.value}轮），这次将开始新的对话`);
   }
 
   busy.value = true;
@@ -379,13 +521,20 @@ async function generate() {
   const thisTurnText = userText.value.trim();
 
   try {
-    const res = await invoke<AiResponse>("ai_generate", {
-      systemPrompt: buildSystemPrompt(props.version),
-      userText: thisTurnText,
-      model: apiModel.value.trim() || null,
-      version: props.version,
-      history: history.value,
-    });
+    const res = usingByok.value
+      ? await invoke<AiResponse>("byok_generate", {
+          systemPrompt: buildSystemPrompt(props.version),
+          userText: thisTurnText,
+          version: props.version,
+          history: history.value,
+        })
+      : await invoke<AiResponse>("ai_generate", {
+          systemPrompt: buildSystemPrompt(props.version),
+          userText: thisTurnText,
+          model: apiModel.value.trim() || null,
+          version: props.version,
+          history: history.value,
+        });
 
     // 连不上服务器时 res.balance 是 null，不能拿它覆盖已经显示的余额——
     // 那会让用户误以为余额真的清零了，其实只是网络问题。
@@ -437,6 +586,8 @@ async function copyText(text: string, label: string) {
 function copyAll() {
   void copyText(commands.value.join("\n"), `全部 ${commands.value.length} 条指令`);
 }
+
+defineExpose({ userText, usePrompt });
 </script>
 
 <template>
@@ -489,7 +640,7 @@ function copyAll() {
         （现在连不上服务器，可能是网络问题或者服务器在维护，稍后再试试。）
       </p>
       <div class="ai-gate-actions">
-        <button class="primary-btn" type="button" @click="openAuth('login')">登录 / 注册</button>
+        <button class="primary-btn" type="button" @click="openAuth('login', $event)">登录 / 注册</button>
       </div>
     </div>
 
@@ -501,15 +652,15 @@ function copyAll() {
       </span>
       <span v-if="auth.loggedIn" class="ai-account">
         <span class="ai-username">{{ displayName(auth.username, auth.isAdmin) }}</span>
-        <button type="button" class="auth-link" @click="openAuth('rename')">改名</button>
-        <button type="button" class="auth-link" @click="openAuth('change')">修改密码</button>
+        <button type="button" class="auth-link" @click="openAuth('rename', $event)">改名</button>
+        <button type="button" class="auth-link" @click="openAuth('change', $event)">修改密码</button>
         <!-- 已经解锁过就不再显示这个入口——解锁是幂等的，但重复显示会让人
              以为"是不是掉了要再认一次"。管理页入口在 App.vue 的模式切换那排。 -->
         <button
           v-if="!auth.adminVerified"
           type="button"
           class="auth-link"
-          @click="openAuth('admin')"
+          @click="openAuth('admin', $event)"
         >
           管理员认证
         </button>
@@ -519,7 +670,7 @@ function copyAll() {
            也就是门禁块（唯一另一个登录按钮所在处）没渲染——少了这个 v-else，
            用户就会卡在"点充值报请登录、但界面上找不到哪里能登录"的死胡同里。 -->
       <span v-else class="ai-account">
-        <button type="button" class="auth-link" @click="openAuth('login')">登录 / 注册</button>
+        <button type="button" class="auth-link" @click="openAuth('login', $event)">登录 / 注册</button>
       </span>
       <button type="button" class="ai-topup-toggle" @click="showTopup = !showTopup">
         充值
@@ -527,8 +678,8 @@ function copyAll() {
     </div>
 
     <div v-if="showTopup" class="ai-topup-panel">
-      <p class="ai-topup-note">当前是免费测试阶段，点击即可直接到账，不会真的扣款。</p>
-      <div class="ai-topup-tiers">
+      <p v-if="BILLING_OPEN" class="ai-topup-note">当前是免费测试阶段，点击即可直接到账，不会真的扣款。</p>
+      <div v-if="BILLING_OPEN" class="ai-topup-tiers">
         <button
           v-for="tier in topupTiers"
           :key="tier.coins"
@@ -541,7 +692,7 @@ function copyAll() {
         </button>
       </div>
 
-      <div class="ai-license">
+      <div class="ai-license" :class="{ solo: !BILLING_OPEN }">
         <span class="field-label">
           激活码
           <InfoTip text="在外部渠道购买后拿到的激活码，格式 SOUL-XXXX-XXXX-XXXX。同一个码只能兑换一次。" />
@@ -549,12 +700,13 @@ function copyAll() {
         <div class="ai-license-row">
           <input
             v-model="licenseKey"
-            placeholder="SOUL-XXXX-XXXX-XXXX"
+            :placeholder="BILLING_OPEN ? 'SOUL-XXXX-XXXX-XXXX' : BILLING_CLOSED_TEXT"
+            :disabled="!BILLING_OPEN"
             autocomplete="off"
             spellcheck="false"
             @keydown.enter="activate"
           />
-          <button type="button" :disabled="!licenseKey.trim() || activating" @click="activate">
+          <button type="button" :disabled="!BILLING_OPEN || !licenseKey.trim() || activating" @click="activate">
             {{ activating ? "兑换中…" : "兑换" }}
           </button>
         </div>
@@ -566,10 +718,14 @@ function copyAll() {
         想要什么效果
         <InfoTip text="用大白话描述你想要的游戏内效果就行，不用管指令怎么写。例如「做一把能射 TNT 的弓」。" />
       </span>
-      <div class="ai-model-row">
+      <div v-if="usingByok" class="ai-model-row">
+        <span class="field-label">模型</span>
+        <span class="ai-byok-using">自己的 key · {{ byokSaved?.model || "未设置" }}</span>
+      </div>
+      <div v-else class="ai-model-row">
         <span class="field-label">
           模型
-          <InfoTip text="不同模型价格/能力差很多：Plus 最稳，Long 性价比最高，Flash 和 DeepSeek 最便宜，Max 贵但能力更强。GLM-5.3 需要服务端接了对应网关才能用。拿不准就选「服务器默认」。" />
+          <InfoTip text="不同模型的价格和能力差别很大，生成前会按所选模型预估这次最多消耗多少灵魂币。拿不准就用默认的 qwen3.7-plus。" />
         </span>
         <CustomSelect
           v-model="apiModel"
@@ -578,9 +734,45 @@ function copyAll() {
       </div>
     </div>
 
+    <div v-if="byokEnabled && desktop" class="ai-byok">
+      <label class="ai-byok-toggle">
+        <input v-model="byokOn" type="checkbox" />
+        使用自己的 API key（测试版）
+        <InfoTip text="用你自己的大模型 key 生成，不消耗灵魂币。key 加密保存在本机、直接从你的电脑发给模型接口，不经过我们的服务器（所以国外接口要开代理）。支持 OpenAI 格式的接口：OpenAI、DeepSeek、通义千问、各种中转。测试期间限时开放，正式版会关闭。" />
+      </label>
+
+      <div v-if="byokOn" class="ai-topup-panel ai-byok-panel">
+        <div class="ai-byok-grid">
+          <span class="field-label">服务商</span>
+          <CustomSelect
+            v-model="byokPreset"
+            :options="BYOK_PRESETS.map((p) => ({ label: p.label, value: p.value }))"
+          />
+          <span class="field-label">接口地址</span>
+          <input v-model="byokEndpoint" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off" />
+          <span class="field-label">模型名</span>
+          <input v-model="byokModel" placeholder="gpt-4o-mini" spellcheck="false" autocomplete="off" />
+          <span class="field-label">API key</span>
+          <input
+            v-model="byokKey"
+            type="password"
+            :placeholder="byokSaved?.hasKey ? `已保存 ${byokSaved.keyHint}，留空不修改` : 'sk-...'"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        <div class="ai-byok-actions">
+          <button type="button" :disabled="byokBusy" @click="saveByok">保存</button>
+          <button type="button" :disabled="byokBusy || !byokSaved?.hasKey" @click="testByok">测试连接</button>
+          <button type="button" :disabled="byokBusy || !byokSaved?.hasKey" @click="clearByokKey">删除 key</button>
+        </div>
+        <p v-if="byokStatus" class="ai-topup-note">{{ byokStatus }}</p>
+      </div>
+    </div>
+
     <div v-if="isContinuing" class="ai-context-bar">
       <span>
-        继续对话中（{{ round }}/{{ MAX_CONTEXT_ROUNDS }} 轮）
+        继续对话中（{{ round }}/{{ maxContextRounds }} 轮）
         <InfoTip text="接下来生成会带上前面几轮的对话，可以直接说「改成用箭」这种追问式修改。超过3轮后会自动开始新对话（防止上下文太长跑偏、也控制费用）。" />
       </span>
       <button type="button" class="ai-new-chat" @click="newConversation">开始新对话</button>
@@ -606,7 +798,6 @@ function copyAll() {
         {{ busy ? "生成中…" : "AI 生成指令" }}
       </button>
       <button type="button" :disabled="commands.length === 0" @click="copyAll">复制全部</button>
-      <button type="button" @click="plazaOpen = true">🏮 万灯集</button>
     </div>
 
     <p v-if="errorText" class="ai-error">{{ errorText }}</p>
@@ -650,15 +841,5 @@ function copyAll() {
       @update:version="(v) => emit('update:version', v)"
     />
     </template>
-
-    <!-- 万灯集：AI 模板那一侧。currentPayload 传输入框里现在这段提示词，
-         用户点"发布我的"时打包的就是它。 -->
-    <PlazaModal
-      v-model:open="plazaOpen"
-      kind="ai"
-      :current-payload="userText"
-      @use="usePrompt"
-      @toast="(m) => emit('toast', m)"
-    />
   </section>
 </template>

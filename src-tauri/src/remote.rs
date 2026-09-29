@@ -8,8 +8,8 @@
 //!
 //! 走的是自签名证书 + 客户端证书锁定，不是公共 CA——服务器部署在国内裸 IP
 //! 机房，没有域名/备案。`tls_built_in_root_certs(false)` + `add_root_certificate`
-//! 这个组合是真正意义上的锁定："只信任这一张，其它一律拒绝"，不是"额外多
-//! 信任一个"；已经用真实 TLS 握手验证过这个组合能正确工作
+//! 这个组合是真正意义上的锁定："只信任内置的这几张（主证书 + 离线备用证书），
+//! 其它一律拒绝"，不是"额外多信任几个"；已经用真实 TLS 握手验证过这个组合能正确工作
 //! （见 server/tests/tls_pinning.rs）。
 
 use crate::ai::{AiUsage, ChatTurn};
@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 /// （这是设计如此——对不上就该拒绝，不能悄悄放行）。
 const SERVER_BASE: &str = "https://120.26.175.121:8443";
 
-/// 测试逃生舱，同 `pinned_cert_pem`：设了这个环境变量就用它代替内置地址，
+/// 测试逃生舱，同 `pinned_certs_pem`：设了这个环境变量就用它代替内置地址，
 /// 让 tests/ 下的集成测试能指向本地起的临时测试服务器，而不必连生产地址。
 fn server_base() -> String {
     std::env::var("SOUL_LANTERN_SERVER_BASE").unwrap_or_else(|_| SERVER_BASE.to_string())
@@ -30,7 +30,7 @@ fn server_base() -> String {
 /// 锁定的证书公钥（PEM），来自服务器上 generate.sh 现场生成的 server.crt
 /// （私钥留在服务器上，从未经过这里）。已核对 SAN 是 IP:120.26.175.121、
 /// basicConstraints 是 CA:FALSE（不是早前踩过的 CaUsedAsEndEntity 那个坑）。
-const PINNED_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+const PRIMARY_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
 MIIBvTCCAWKgAwIBAgIUVhcCDUQFkiyA4NZdNFAz+LmngucwCgYIKoZIzj0EAwIw
 GTEXMBUGA1UEAwwOMTIwLjI2LjE3NS4xMjEwHhcNMjYwODEwMTIxNTAyWhcNNDYw
 ODA1MTIxNTAyWjAZMRcwFQYDVQQDDA4xMjAuMjYuMTc1LjEyMTBZMBMGByqGSM49
@@ -43,15 +43,42 @@ AGZkXgptheFQ73NyscnWdNew9Pv5CJW5IXAqndn0AiEA+Bo5zYfdCNEPw62aMkrH
 qXn++VziEGlP1US9zfaXJw0=
 -----END CERTIFICATE-----"#;
 
+/// 备用证书。**平时服务器上不用它**，私钥离线保管、不在服务器上也不在任何仓库里。
+///
+/// 存在的理由：这个客户端没有自动更新，锁定的证书一换，所有已发出去的客户端
+/// 立刻全部失联。只锁一张的话，主证书私钥一旦泄露或丢失（服务器被入侵、磁盘坏、
+/// 误删），唯一的办法就是发新客户端、等所有人重装。预先把第二张也编进来，
+/// 出事时服务器把 TLS_CERT/TLS_KEY 换成这一对，老客户端照样能连。
+///
+/// 由开发者在自己电脑上生成（私钥从未经过任何服务器或本仓库）。
+/// 同样核对过 SAN=IP:120.26.175.121、CA:FALSE，有效期到 2046-09。
+/// SHA-256 指纹 49:A1:01:B7:…:F0:D4:54（完整值见服务端仓库 deploy/CONFIG.md）。
+const BACKUP_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBuzCCAWKgAwIBAgIUMEtODo93tv+Qx/7N180WkjcaiXQwCgYIKoZIzj0EAwIw
+GTEXMBUGA1UEAwwOMTIwLjI2LjE3NS4xMjEwHhcNMjYwOTI2MDQ0NjMwWhcNNDYw
+OTIxMDQ0NjMwWjAZMRcwFQYDVQQDDA4xMjAuMjYuMTc1LjEyMTBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABBimKSUdbjswrBEWilFGU6qrOYu5703SNH5NliYKnB+t
+KV5wjGDzMNsr1QHcpF9DHg1wSDR2Vzv+Gq0HAJ63EZKjgYcwgYQwHQYDVR0OBBYE
+FLJgsLauT+0YNn9wIgWSxJuCEaiCMB8GA1UdIwQYMBaAFLJgsLauT+0YNn9wIgWS
+xJuCEaiCMA8GA1UdEQQIMAaHBHgar3kwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8E
+BAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYIKoZIzj0EAwIDRwAwRAIgD3Og
+tqQ0dXe9wtHVv8z4CdEeX3lEhICuJkZoC/IfFpkCIAOSQwr91PfMrUCyyOBADiDq
+3x5M0WNyYudGIyEu+QBM
+-----END CERTIFICATE-----"#;
+
+/// 客户端信任的全部证书。服务器出示其中**任意一张**都能握手，其它一律拒绝。
+const PINNED_CERT_PEMS: [&str; 2] = [PRIMARY_CERT_PEM, BACKUP_CERT_PEM];
+
 /// 测试 / 联调用的逃生舱：设了这个环境变量就读文件内容代替内置的
-/// `PINNED_CERT_PEM`，正常发布的客户端不会设这个变量，走的还是编译进去的
-/// 那份。这里存在的唯一理由是 tests/ 下的集成测试要用一张现场生成的临时
+/// `PINNED_CERT_PEMS`，正常发布的客户端不会设这个变量，走的还是编译进去的
+/// 那几份。这里存在的唯一理由是 tests/ 下的集成测试要用一张现场生成的临时
 /// 证书验证整条链路，不能也不该为了测试去改动打包进正式客户端的那个常量。
-fn pinned_cert_pem() -> String {
+/// 文件里可以放多张证书（直接首尾拼接），和内置的多张一样对待。
+fn pinned_certs_pem() -> String {
     std::env::var("SOUL_LANTERN_PINNED_CERT_FILE")
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .unwrap_or_else(|| PINNED_CERT_PEM.to_string())
+        .unwrap_or_else(|| PINNED_CERT_PEMS.join("\n"))
 }
 
 fn client() -> &'static reqwest::Client {
@@ -62,15 +89,26 @@ fn client() -> &'static reqwest::Client {
         // 见 server/src/main.rs 的同一行注释）。重复调用不会报错，忽略返回值。
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let cert = reqwest::Certificate::from_pem(pinned_cert_pem().as_bytes())
-            .expect("内置证书 PEM 解析失败——多半是占位符还没换成真实证书内容");
+        let certs = reqwest::Certificate::from_pem_bundle(pinned_certs_pem().as_bytes())
+            .expect("内置证书 PEM 解析失败——多半是粘贴时手滑改坏了");
+        assert!(!certs.is_empty(), "没有任何可信证书");
 
-        reqwest::Client::builder()
-            .tls_built_in_root_certs(false) // 只信任下面这一张，不信任系统公共信任链
-            .add_root_certificate(cert)
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .expect("构建 HTTPS 客户端失败")
+        // 每个请求都带上客户端版本号：服务端低于 MIN_CLIENT 的一律 426（见服务端
+        // client_version_gate）。这防不住故意改版本号的人，挡的是正常用着老版本的人。
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-Client-Version",
+            reqwest::header::HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+        );
+
+        let mut builder = reqwest::Client::builder()
+            .tls_built_in_root_certs(false) // 只信任下面这几张，不信任系统公共信任链
+            .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(60));
+        for cert in certs {
+            builder = builder.add_root_certificate(cert);
+        }
+        builder.build().expect("构建 HTTPS 客户端失败")
     })
 }
 
@@ -198,6 +236,9 @@ pub struct MeView {
     /// 只会到达客户端一次——拿到就必须弹出来，丢了就再也没有了。
     #[serde(default)]
     pub notices: Vec<BalanceNotice>,
+    /// 贡献者等级。老服务端不发 → 0。
+    #[serde(default)]
+    pub contributor_level: u8,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -233,6 +274,24 @@ pub struct VersionView {
     /// 短信签名。老服务端不发，所以是可选的。
     #[serde(default)]
     pub sms_sign_name: Option<String>,
+    /// AI 连续对话轮数（服务端默认模型）。老服务端不发 → None，界面退回内置的 3。
+    #[serde(default)]
+    pub max_context_rounds: Option<u32>,
+    /// 各模型各自允许的轮数。老服务端不发 → 空表。
+    #[serde(default)]
+    pub model_context_rounds: std::collections::HashMap<String, u32>,
+    /// 测试版「自带 API key」开着没有。老服务端不发 → false。
+    #[serde(default)]
+    pub byok_enabled: bool,
+    /// 最新客户端的内部版本号；空 = 服务端没配，不提示。老服务端不发 → 空。
+    #[serde(default)]
+    pub latest_client: String,
+    /// 最新版给人看的名字，比如 "5.0-rc2"。
+    #[serde(default)]
+    pub latest_display: String,
+    /// 下载页地址。
+    #[serde(default)]
+    pub download_url: String,
 }
 
 pub async fn register_begin(username: &str, password: &str, phone: &str) -> Result<CodeSentView, String> {
@@ -429,17 +488,82 @@ pub async fn plaza_favorite(id: &str) -> Result<serde_json::Value, String> {
 
 /// 记一次下载。失败不该挡住用户真正的动作（内容详情里已经拿到了），
 /// 所以调用方通常忽略它的错误。
+///
+/// 登录了就带上凭据：服务端现在**只给登录用户计数、每人每作品只算一次**
+/// （防刷）。不带的话服务端照样返回 200，但这次下载不会被计进去。
 pub async fn plaza_download(id: &str) -> Result<serde_json::Value, String> {
+    let mut req = client().post(format!("{}/v1/plaza/works/{id}/download", server_base()));
+    if let Some(t) = session::token() {
+        req = req.bearer_auth(t);
+    }
+    let resp = req.send().await.map_err(describe_connect_err)?;
+    parse_json(resp).await
+}
+
+pub async fn plaza_comment(id: &str, body: &str) -> Result<serde_json::Value, String> {
+    post_auth(&format!("/v1/plaza/works/{id}/comments"), &serde_json::json!({ "body": body })).await
+}
+
+pub async fn plaza_report(id: &str, comment_id: Option<&str>, reason: &str) -> Result<serde_json::Value, String> {
+    let path = match comment_id {
+        Some(cid) => format!("/v1/plaza/works/{id}/comments/{cid}/report"),
+        None => format!("/v1/plaza/works/{id}/report"),
+    };
+    post_auth(&path, &serde_json::json!({ "reason": reason })).await
+}
+
+// ---------------------------------------------------------------- 管理：审核 / 敏感词 / 贡献数据
+
+pub async fn admin_reports() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/reports").await
+}
+
+pub async fn admin_resolve_report(work_id: &str, comment_id: Option<&str>, action: &str) -> Result<serde_json::Value, String> {
+    post_auth(
+        "/v1/admin/session/reports/resolve",
+        &serde_json::json!({ "workId": work_id, "commentId": comment_id, "action": action }),
+    )
+    .await
+}
+
+pub async fn admin_get_words() -> Result<serde_json::Value, String> {
+    get_auth("/v1/admin/session/words").await
+}
+
+pub async fn admin_set_words(text: &str) -> Result<serde_json::Value, String> {
+    post_auth("/v1/admin/session/words", &serde_json::json!({ "text": text })).await
+}
+
+pub async fn admin_telemetry(kind: &str, user: &str, limit: u32) -> Result<serde_json::Value, String> {
+    let token = bearer()?;
     let resp = client()
-        .post(format!("{}/v1/plaza/works/{id}/download", server_base()))
+        .get(format!("{}/v1/admin/session/telemetry", server_base()))
+        .query(&[("kind", kind), ("user", user), ("limit", &limit.to_string())])
+        .bearer_auth(token)
         .send()
         .await
         .map_err(describe_connect_err)?;
     parse_json(resp).await
 }
 
-pub async fn plaza_comment(id: &str, body: &str) -> Result<serde_json::Value, String> {
-    post_auth(&format!("/v1/plaza/works/{id}/comments"), &serde_json::json!({ "body": body })).await
+// ---------------------------------------------------------------- 贡献者计划
+
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributorView {
+    pub level: u8,
+    /// 余额变化：正数是奖励，负数是收回。dryRun 时是"假如执行"的数。
+    pub delta: i64,
+    pub balance: i64,
+    pub applied: bool,
+}
+
+pub async fn contributor_set(level: u8, dry_run: bool) -> Result<ContributorView, String> {
+    post_auth("/v1/contributor", &serde_json::json!({ "level": level, "dryRun": dry_run })).await
+}
+
+pub async fn telemetry_upload(kind: &str, data: &serde_json::Value) -> Result<serde_json::Value, String> {
+    post_auth("/v1/telemetry", &serde_json::json!({ "kind": kind, "data": data })).await
 }
 
 pub async fn plaza_delete_comment(id: &str, comment_id: &str) -> Result<serde_json::Value, String> {
@@ -551,32 +675,61 @@ pub async fn ai_generate(
     parse_json(resp).await
 }
 
+// ---------------------------------------------------------------- 测试版：自带 API key
+
+#[derive(Serialize)]
+struct ByokBuildReq<'a> {
+    content: &'a str,
+    version: &'a str,
+    /// 只用于高级贡献者的 AI 记录（服务端决定记不记），不影响构建。
+    user_text: &'a str,
+    model: &'a str,
+}
+
+/// 把用户自己的 key 调出来的 AI 输出交给服务端构建器转成指令。不扣费。
+/// 返回的形状和 `ai_generate` 完全一样（服务端两条路共用同一个构建函数）。
+pub async fn byok_build(content: &str, version: &str, user_text: &str, model: &str) -> Result<AiGenerateResp, String> {
+    let token = bearer()?;
+    let resp = client()
+        .post(format!("{}/v1/byok/build", server_base()))
+        .bearer_auth(token)
+        .json(&ByokBuildReq { content, version, user_text, model })
+        .send()
+        .await
+        .map_err(describe_connect_err)?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err("服务端已关闭「使用自己的 API key」功能。".to_string());
+    }
+    parse_json(resp).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// 防的是"占位符忘了换成真实证书"或者"贴的时候手滑改坏了"这两种情况——
     /// 光靠人眼看 PEM 那一长串 base64 是看不出来对不对的，跑这条测试
-    /// 至少能保证它现在是一份能被 reqwest 正常解析的合法证书。
+    /// 至少能保证每一张都是能被 reqwest 正常解析的合法证书。
     #[test]
-    fn pinned_cert_is_a_valid_parseable_certificate() {
-        reqwest::Certificate::from_pem(PINNED_CERT_PEM.as_bytes())
-            .expect("PINNED_CERT_PEM 应该是一份合法证书——是不是还是占位符，或者粘贴时手滑改坏了？");
+    fn pinned_certs_are_valid_parseable_certificates() {
+        for (i, pem) in PINNED_CERT_PEMS.iter().enumerate() {
+            reqwest::Certificate::from_pem(pem.as_bytes())
+                .unwrap_or_else(|e| panic!("第 {i} 张锁定证书解析失败，是不是粘贴时手滑改坏了：{e}"));
+        }
+        // 拼接后整包解析必须拿到同样多张——client() 走的是这条路径
+        let bundle = reqwest::Certificate::from_pem_bundle(PINNED_CERT_PEMS.join("\n").as_bytes()).unwrap();
+        assert_eq!(bundle.len(), PINNED_CERT_PEMS.len());
     }
 
     /// 证书内容长度做个粗筛：早前的占位符字符串远比一份真实证书短。
     /// SERVER_BASE 打的地址和证书 SAN 是否匹配这件事，靠的是
-    /// tests/remote_integration.rs 那条真实 TLS 握手的集成测试来验证——
-    /// 单测这里只检查"这不再是那句占位符英文"这种低成本但有效的粗筛。
+    /// tests/remote_integration.rs 那条真实 TLS 握手的集成测试来验证。
     #[test]
-    fn pinned_cert_is_not_the_placeholder() {
-        assert!(
-            PINNED_CERT_PEM.len() > 200,
-            "证书内容看起来太短，多半还是占位符没换成真实证书"
-        );
-        assert!(
-            !PINNED_CERT_PEM.contains("REPLACE_WITH_REAL"),
-            "PINNED_CERT_PEM 还是占位符文本，没有换成真实证书内容"
-        );
+    fn pinned_certs_are_not_placeholders_and_distinct() {
+        for pem in PINNED_CERT_PEMS {
+            assert!(pem.len() > 200, "证书内容看起来太短，多半还是占位符没换成真实证书");
+            assert!(!pem.contains("REPLACE_WITH_REAL"), "还是占位符文本，没有换成真实证书内容");
+        }
+        assert_ne!(PRIMARY_CERT_PEM, BACKUP_CERT_PEM, "备用证书和主证书是同一张，等于没备");
     }
 }

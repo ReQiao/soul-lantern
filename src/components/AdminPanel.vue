@@ -24,10 +24,13 @@ import InfoTip from "./InfoTip.vue";
 const props = defineProps<{ active?: boolean }>();
 const emit = defineEmits<{ toast: [message: string, duration?: number] }>();
 
-type Tab = "users" | "env" | "policy" | "health";
+type Tab = "users" | "reports" | "words" | "telemetry" | "env" | "policy" | "health";
 const tab = ref<Tab>("users");
 const tabOptions = [
   { label: "用户", value: "users" },
+  { label: "举报审核", value: "reports" },
+  { label: "敏感词", value: "words" },
+  { label: "贡献数据", value: "telemetry" },
   { label: "环境变量", value: "env" },
   { label: "价格配置", value: "policy" },
   { label: "运行状态", value: "health" },
@@ -279,10 +282,113 @@ const healthRows = computed(() =>
   })),
 );
 
+// ---------------- 举报审核 ----------------
+
+interface ReportItem {
+  kind: "work" | "comment";
+  workId: string;
+  commentId: string | null;
+  workTitle: string;
+  content: string;
+  authorName: string;
+  hidden: boolean;
+  reasons: string[];
+  reportCount: number;
+  lastReportAt: number;
+}
+const reports = ref<ReportItem[]>([]);
+
+async function loadReports() {
+  const r = await run(() => invoke<ReportItem[]>("admin_reports"));
+  if (r) reports.value = r;
+}
+
+async function resolveReport(item: ReportItem, action: "restore" | "delete") {
+  const what = item.kind === "work" ? `作品「${item.workTitle}」` : `${item.authorName} 的评论`;
+  if (action === "delete" && !confirm(`确定删除${what}吗？删了找不回来。`)) return;
+  const r = await run(() =>
+    invoke("admin_resolve_report", { workId: item.workId, commentId: item.commentId, action }),
+  );
+  if (r !== undefined) {
+    emit("toast", action === "delete" ? `已删除${what}` : `已恢复${what}`);
+    reports.value = reports.value.filter((x) => x !== item);
+  }
+}
+
+function fmtTime(secs: number): string {
+  return secs ? new Date(secs * 1000).toLocaleString() : "";
+}
+
+// ---------------- 敏感词 ----------------
+
+const wordsText = ref("");
+const wordsTotal = ref(0);
+
+async function loadWords() {
+  const r = await run(() => invoke<{ text: string; total: number }>("admin_get_words"));
+  if (r) {
+    wordsText.value = r.text;
+    wordsTotal.value = r.total;
+  }
+}
+
+async function saveWords() {
+  const r = await run(() => invoke<{ text: string; total: number }>("admin_set_words", { text: wordsText.value }));
+  if (r) {
+    wordsTotal.value = r.total;
+    emit("toast", `已保存，现在共 ${r.total} 个词，立即生效`);
+  }
+}
+
+// ---------------- 贡献数据 ----------------
+
+interface TelemetryRow {
+  at: number;
+  userId: string;
+  username: string;
+  level: number;
+  kind: string;
+  data: Record<string, unknown>;
+}
+const telemetryKind = ref("");
+const telemetryUser = ref("");
+const telemetryRows = ref<TelemetryRow[]>([]);
+const telemetryOpen = ref<number | null>(null);
+const telemetryKindOptions = [
+  { label: "全部", value: "" },
+  { label: "错误", value: "error" },
+  { label: "AI 记录", value: "ai" },
+  { label: "系统信息", value: "session" },
+];
+
+async function loadTelemetry() {
+  const r = await run(() =>
+    invoke<TelemetryRow[]>("admin_telemetry", { kind: telemetryKind.value, user: telemetryUser.value.trim(), limit: 300 }),
+  );
+  if (r) {
+    telemetryRows.value = r;
+    telemetryOpen.value = null;
+  }
+}
+
+/** 列表里一行的摘要。完整内容点开看。 */
+function telemetrySummary(row: TelemetryRow): string {
+  const d = row.data ?? {};
+  if (row.kind === "error") return `[${d.context ?? ""}] ${String(d.message ?? "").slice(0, 120)}`;
+  if (row.kind === "ai") return `${d.ok ? "✓" : "✗"} ${d.model ?? ""}：${String(d.userText ?? "").slice(0, 100)}`;
+  const sys = (d.system ?? {}) as Record<string, unknown>;
+  return `${sys.osVersion ?? sys.os ?? ""} ${sys.arch ?? ""} · ${sys.appVersion ?? ""}`;
+}
+
+watch(telemetryKind, () => void loadTelemetry());
+
 // ---------------- 载入 ----------------
 
 async function loadTab() {
   if (tab.value === "users") await loadUsers();
+  else if (tab.value === "reports") await loadReports();
+  else if (tab.value === "words") await loadWords();
+  else if (tab.value === "telemetry") await loadTelemetry();
   else if (tab.value === "env") await loadEnv();
   else if (tab.value === "policy") await loadPolicy();
   else await loadHealth();
@@ -393,8 +499,13 @@ watch(
       <!-- ================= 环境变量 ================= -->
       <template v-else-if="tab === 'env'">
         <p class="admin-hint">
-          文件：<code>{{ env?.path ?? "（这台服务不是用 --env-file 启动的）" }}</code>
-          <span v-if="env && !env.writable" class="admin-warn">· 服务对这个文件没有写权限</span>
+          文件：<code>{{ env?.path ?? "（未知）" }}</code>
+          <span v-if="env && !env.path" class="admin-warn">
+            · 服务的启动命令没带 <code>--env-file</code>，所以这里看不到也改不了 .env。
+            用最新的「部署.bat」部署一次会自动补上（或手动在 systemd 单元的 ExecStart 末尾加
+            <code>--env-file /opt/soul-lantern/.env</code>）。
+          </span>
+          <span v-else-if="env && !env.writable" class="admin-warn">· 服务对这个文件没有写权限</span>
         </p>
         <p class="admin-hint">
           密钥类只显示"已设置（N 字符）"，<strong>不会</strong>把明文发到这里来——
@@ -472,6 +583,73 @@ watch(
           </button>
           <button type="button" :disabled="busy" @click="loadPolicy">放弃修改，重新载入</button>
         </div>
+      </template>
+
+      <!-- ================= 举报审核 ================= -->
+      <template v-else-if="tab === 'reports'">
+        <p class="admin-hint">
+          被举报过的作品和评论。<strong>已隐藏</strong>的是举报人数到了阈值、自动藏起来等你审的
+          （阈值在价格配置的 <code>limits.plaza_report_hide_threshold</code>）。
+          「没问题」会清掉举报并恢复显示，「删除」不可恢复。
+        </p>
+        <div v-for="item in reports" :key="item.workId + (item.commentId ?? '')" class="admin-block admin-report">
+          <div class="admin-report-head">
+            <span class="plaza-tag">{{ item.kind === "work" ? "作品" : "评论" }}</span>
+            <span v-if="item.hidden" class="admin-danger-tag">已隐藏</span>
+            <strong>{{ item.authorName }}</strong>
+            <span class="admin-hint">
+              {{ item.reportCount }} 人举报 · {{ fmtTime(item.lastReportAt) }}
+              <template v-if="item.kind === 'comment'"> · 所在作品「{{ item.workTitle }}」</template>
+            </span>
+          </div>
+          <pre class="admin-report-content">{{ item.content }}</pre>
+          <p v-if="item.reasons.length" class="admin-hint">理由：{{ item.reasons.join("；") }}</p>
+          <div class="admin-row">
+            <button type="button" :disabled="busy" @click="resolveReport(item, 'restore')">没问题，恢复</button>
+            <button type="button" class="plaza-danger" :disabled="busy" @click="resolveReport(item, 'delete')">删除</button>
+          </div>
+        </div>
+        <p v-if="!reports.length" class="plaza-md-empty">没有待处理的举报。</p>
+      </template>
+
+      <!-- ================= 敏感词 ================= -->
+      <template v-else-if="tab === 'words'">
+        <p class="admin-hint">
+          一行一个词，<code>#</code> 开头是注释。保存<strong>立即生效</strong>，不用重启。
+          用在万灯集作品、评论和用户名上；匹配时会忽略空格、标点和全角半角的区别。
+          另外还内置了一小份明显违规的词（赌博 / 色情 / 毒品 / 引流广告 / 脏话），这里看不到也删不掉。
+          更完整的词库（包括政治类）可以从公开词库复制过来粘贴进来。
+        </p>
+        <p class="admin-hint">当前生效：{{ wordsTotal }} 个词（内置 + 下面这些，去重后）。</p>
+        <textarea v-model="wordsText" class="admin-policy" spellcheck="false" placeholder="# 一行一个词"></textarea>
+        <div class="admin-row">
+          <button class="primary-btn" type="button" :disabled="busy" @click="saveWords">保存词表</button>
+          <button type="button" :disabled="busy" @click="loadWords">放弃修改，重新载入</button>
+        </div>
+      </template>
+
+      <!-- ================= 贡献数据 ================= -->
+      <template v-else-if="tab === 'telemetry'">
+        <p class="admin-hint">
+          贡献者上报的数据，新的在前（最近 30 天、最多 300 条）。完整文件在服务器数据目录的
+          <code>telemetry/</code> 下，一天一个 JSONL。
+        </p>
+        <div class="admin-row">
+          <CustomSelect v-model="telemetryKind" :options="telemetryKindOptions" />
+          <input v-model="telemetryUser" class="admin-search" placeholder="按用户名 / ID 筛选" @keydown.enter="loadTelemetry" />
+          <button type="button" :disabled="busy" @click="loadTelemetry">刷新</button>
+        </div>
+        <div class="admin-telemetry-list">
+          <div v-for="(row, i) in telemetryRows" :key="i" class="admin-telemetry-row">
+            <button type="button" class="admin-telemetry-summary" @click="telemetryOpen = telemetryOpen === i ? null : i">
+              <span class="plaza-tag">{{ row.kind }}</span>
+              <span class="admin-hint">{{ fmtTime(row.at) }} · {{ row.username }}（Lv{{ row.level }}）</span>
+              <span class="admin-telemetry-text">{{ telemetrySummary(row) }}</span>
+            </button>
+            <pre v-if="telemetryOpen === i" class="admin-report-content">{{ JSON.stringify(row.data, null, 2) }}</pre>
+          </div>
+        </div>
+        <p v-if="!telemetryRows.length" class="plaza-md-empty">还没有数据。</p>
       </template>
 
       <!-- ================= 运行状态 ================= -->

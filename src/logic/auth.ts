@@ -57,6 +57,8 @@ export interface AuthState {
    * 否则下一次 `refreshAuth` 覆盖 `auth.value` 时就永远丢了。
    */
   notices: BalanceNotice[];
+  /** 贡献者等级：0 不贡献，1 贡献者，2 高级贡献者。见 SettingsModal / telemetry.ts。 */
+  contributorLevel: number;
 }
 
 const LOGGED_OUT: AuthState = {
@@ -70,6 +72,7 @@ const LOGGED_OUT: AuthState = {
   adminVerified: false,
   favorites: [],
   notices: [],
+  contributorLevel: 0,
 };
 
 /**
@@ -105,6 +108,23 @@ export const authRequired = ref(false);
 export const smsSignName = ref<string | null>(null);
 
 /**
+ * AI 连续对话轮数，服务端下发。`defaultRounds` 用于没选模型（走服务端默认模型）时，
+ * `modelRounds` 是各模型各自的值。拿不到（老服务端 / 连不上）就是 null，
+ * AiPanel 退回内置的 3——服务端本来也会按自己的配置裁剪历史，这里只管界面显示。
+ */
+export interface ContextRounds {
+  defaultRounds: number;
+  modelRounds: Record<string, number>;
+}
+export const contextRounds = ref<ContextRounds | null>(null);
+
+/**
+ * 【测试版】服务端开没开「使用自己的 API key」。服务端在 policy 里一键关，
+ * 关掉之后这里是 false、AI 面板就不显示那个选项。
+ */
+export const byokEnabled = ref(false);
+
+/**
  * 测试开关：`localStorage` 里 `soul-lantern-gate` = "on" 时强制进入门禁状态。
  *
  * 门禁真正生效需要三件事同时成立：跑在 Tauri 里、服务端说要登录、当前没登录。
@@ -135,6 +155,11 @@ export type AuthMode = "login" | "register" | "reset" | "change" | "rename" | "a
 export const authModalOpen = ref(false);
 /** 打开时停在哪一屏。改密码要能直接跳过去，不然用户得先看到登录表单再自己找。 */
 export const authModalMode = ref<AuthMode>("login");
+/**
+ * 触发这次弹窗的按钮元素，供 AuthModal 复用物品选择弹窗那套"从按钮飞出来"的
+ * 动画（见 morphPopup.ts）。拿不到就退化成纯淡入淡出，不是 bug。
+ */
+export const authModalOrigin = ref<HTMLElement | null>(null);
 
 /**
  * 登录成功后要不要顺势切进 AI 模式。
@@ -144,8 +169,14 @@ export const authModalMode = ref<AuthMode>("login");
  */
 export const pendingAiSwitch = ref(false);
 
-export function openAuth(mode: AuthMode) {
+/**
+ * 打开登录弹窗。`origin` 可以直接传按钮元素，也可以图省事把点击事件本身传进来——
+ * 后一种情况这里帮忙取 `currentTarget`，调用点就不用每次都写一遍类型转换。
+ */
+export function openAuth(mode: AuthMode, origin?: Event | HTMLElement | null) {
   authModalMode.value = mode;
+  authModalOrigin.value =
+    origin instanceof Event ? (origin.currentTarget as HTMLElement | null) : (origin ?? null);
   authModalOpen.value = true;
 }
 
@@ -184,6 +215,16 @@ export async function refreshAuthRequired() {
     smsSignName.value = await invoke<string | null>("auth_sms_sign_name");
   } catch {
     smsSignName.value = null;
+  }
+  try {
+    contextRounds.value = await invoke<ContextRounds | null>("auth_context_rounds");
+  } catch {
+    contextRounds.value = null;
+  }
+  try {
+    byokEnabled.value = await invoke<boolean>("auth_byok_enabled");
+  } catch {
+    byokEnabled.value = false;
   }
 }
 
