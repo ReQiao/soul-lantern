@@ -29,7 +29,6 @@ jobs:
         with:
           name: macos-x64
           path: |
-            src-tauri/target/x86_64-apple-darwin/release/bundle/**/*.app
             src-tauri/target/x86_64-apple-darwin/release/bundle/**/*.dmg
             src-tauri/target/x86_64-apple-darwin/release/bundle/**/*.tar.gz
 
@@ -53,7 +52,6 @@ jobs:
         with:
           name: macos-silicon
           path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/**/*.app
             src-tauri/target/aarch64-apple-darwin/release/bundle/**/*.dmg
             src-tauri/target/aarch64-apple-darwin/release/bundle/**/*.tar.gz
 
