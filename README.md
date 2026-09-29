@@ -1,231 +1,183 @@
 # Soul Lantern（灵魂灯笼）
 
-一个面向 Minecraft 的指令生成器，当前支持 **Java 1.20.5+** 与 **基岩版** 两种版本。
+一个面向 Minecraft 的指令生成器，支持 **Java 1.20.5 ~ 26.2** 与 **基岩版**。
 
-**注意：如果下载后被杀软拦截，请您放心同意运行，本程序没有任何病毒。**
+目标是解决 MC 新手以及指令熟手在编写指令 JSON 和物品组件时步骤繁琐、容易写错的问题：
+可以在**手动模式**里一项项点选生成，也可以在 **AI 模式**里用大白话描述想要的效果，
+再到**万灯集**里和大家分享、借鉴模板。界面为深蓝液态玻璃风格，全中文。
 
-**本版本对项目进行了大规模重构与功能扩展，已全面转为 `Tauri v2 + Vue 3 + TypeScript` 架构**
+**下载：[GitHub Releases](https://github.com/ReQiao/soul-lantern/releases)**（当前为 5.0-rc1 测试版）
 
-这是一个基于 **Tauri v2 + Vue 3 + TypeScript** 的桌面应用，目标是解决 MC 新手以及指令熟手在编辑指令 JSON 和物品组件时步骤繁琐、容易写错的问题。界面为深蓝液态玻璃设计风格，有手动模式/AI模式/万灯集等功能。
+> 安装包没有数字签名。Windows 弹出「Windows 已保护你的电脑」时，点「更多信息」→「仍要运行」；
+> 杀毒软件拦截时请放心允许，本程序没有任何病毒，源代码全部公开在本仓库。
 
-## 功能特性
+## 功能
 
-- 完整的物品，附魔，属性数据库
-- 中文界面
-- 深蓝玻璃风 UI
-- Java 1.20.5+ 指令语法
-- 基岩版 `/give` 基础组件语法
-- 版本选择：Java 1.20.5 ~ 26.2 / 基岩版
+### 手动模式
 
-### 手动模式(/give)
-  
-- 显示名称、物品名称、物品描述富文本编辑
-- 加粗、斜体、下划线、删除线
-- 文字颜色与渐变颜色
-- 阴影颜色与透明度
-- 附魔生成
-- 属性修饰符生成
-- 可放置 / 可破坏方块限制
-- 基础组件生成
-- 食物组件生成
-- 消耗组件与食用效果生成
-- 死亡保护与死亡效果生成
-- 工具规则生成
+完全在本地运行，不联网、不需要账号。
+
+- 完整的物品、方块、附魔、属性数据库（物品表来自 Mojang 官方数据，中文译名齐全），分类选择 + 搜索
+- 显示名称、物品名称、物品描述的富文本编辑：加粗、斜体、下划线、删除线、混淆、字体、文字颜色 / 渐变色、阴影颜色与透明度
+- 完整文本组件：内嵌图标 / 头像、悬停 / 点击 / 插入事件、翻译 / 按键 / 选择器 / 计分板 / NBT 组件，按所选版本自动取舍
+- 附魔、属性修饰符、可放置 / 可破坏方块限制
+- 基础组件、食物、消耗与食用效果、死亡保护与死亡效果、工具规则、custom_data
 - 基岩版数据值、物品锁、死亡保留
-- 自动保存草稿
-- JSON 模板导出与导入
-- 内置 JSON 模版
-- 万灯集模版
-- 一键复制指令
-- 一键部署指令到游戏
+- 撤销 / 重做 / 重置，自动保存草稿
+- 模板：内置模板、JSON 导出 / 导入、从万灯集收藏的模板
+- 一键复制指令，一键部署到存档
 
+### AI 模式
 
+用大白话描述想要的效果，比如「做一把能射 TNT 的弓」，自动生成指令并给出思路说明。需要账号。
 
-## 当前支持版本
+- 生成的指令由确定性的构建器兜底，AI 编造的物品 / 方块 / 实体 / 附魔 id 会被拦下，并按所选版本校验
+- 多轮对话：可以在上一次的结果上继续追问修改（比如「改成用箭」）
+- 多个模型可选，按真实用量扣灵魂币，生成前会先按所选模型预估这次最多花多少
+- 需要持续生效的效果（比如落地爆炸）会单独列出，只能通过一键部署挂到数据包的循环上
+- 测试期间可以「使用自己的 API key」：支持 OpenAI 格式的接口，key 加密保存在本机，不经过我们的服务器，不消耗灵魂币（正式版会关闭）
+
+### 万灯集
+
+大家分享模板的地方，每个人发出去的一份模板就是一盏灯。
+
+- 发布自己的手动模板或 AI 提示词，支持 Markdown 说明
+- 浏览、搜索、分类筛选，点赞、收藏、评论，一键载入使用
+- 不合适的内容可以举报，多人举报后会先隐藏等待审核
+
+### 一键部署到存档
+
+- 选择存档后，把生成的指令打包成数据包放进存档，进游戏 `/reload` 即可生效
+- 循环效果自动挂到 tick 上；会识别存档的实际版本，和当前选择不一致时给出提示
+- 数据包命名空间为 `soul_lantern`，每次部署前先整包清空，不会残留旧的循环效果
+- **部署前请先备份存档**
+
+### 其它
+
+- 设置页：贡献者计划、反馈入口（可一键复制诊断信息）、版本信息
+- 发布新版本后，软件顶部会提示并可一键打开下载页
+- 玻璃透明度可调，可关闭界面动画，F11 全屏
+
+## 下载与安装
+
+在 [Releases](https://github.com/ReQiao/soul-lantern/releases) 页面按系统选择：
+
+| 系统 | 文件 |
+|---|---|
+| Windows（64 位 / 32 位 / ARM64） | `…-windows-x64.exe`（推荐）或 `.msi` |
+| macOS（Intel / Apple 芯片） | `…-macos-x64.dmg` / `…-macos-silicon.dmg` |
+| Linux（x64 / ARM64） | `.AppImage`、`.deb` 或 `.rpm` |
+
+- Windows 安装时可以选择只为自己安装，还是为这台电脑的所有用户安装。
+- 软件依赖微软的 WebView2 组件（Windows 11 和绝大多数 Windows 10 自带）。缺少时安装程序会提示并自动下载安装。
+- 4.x 老版本已无法连接新服务器，请安装新版本。
+
+## 账号与灵魂币
+
+手动模式不需要账号。AI 模式和万灯集的发布、互动需要用手机号注册（验证码短信由阿里云发出，短信开头的签名是服务商的名字）。
+
+AI 生成会按真实调用量扣除**灵魂币**。测试期间**暂不开放充值和激活码**，灵魂币可以通过以下方式获得：
+
+- 注册赠送
+- 反馈问题：每一条有效反馈都会获赠测试用的灵魂币（反馈时附上用户名）
+- 贡献者计划：在「设置」里自愿加入，上报使用数据可获得奖励，随时可以退出
+
+测试版的账号、灵魂币和万灯集作品**可能会在正式版之前清空**。
+
+## 支持的版本
 
 ### Java 版
 
-```text
-Java 1.20.5+
-```
-
-当前支持新版物品组件格式，例如：
+版本选择：Java 1.20.5 / 1.21 / 1.21.1 ~ 1.21.6 / 1.21.9 / 1.21.11+ / 26.1 / 26.2+。
+生成的是新版物品组件格式，例如：
 
 ```mcfunction
 give @a minecraft:stone[custom_name=[{"text":"石头","color":"#7aa2ff"}],unbreakable={}] 1
 ```
 
-### 基岩版
+手动模式已支持的组件：
 
 ```text
-Bedrock
+custom_name  item_name  lore  rarity  enchantment_glint_override
+enchantments  attribute_modifiers  can_place_on  can_break  unbreakable
+glider  death_protection  damage  max_damage  max_stack_size  repair_cost
+tooltip_display  food  consumable  on_consume_effects  tool  tool.rules
+custom_data
 ```
 
-当前基岩版主要支持基础 `/give` 格式：
+### 基岩版
+
+主要支持基础 `/give` 格式：
 
 ```mcfunction
 /give @a cobblestone 1 0 {"minecraft:can_place_on":{"blocks":["stone"]}}
 ```
 
-基岩版暂不直接支持 Java 版的富文本、属性、食物效果等组件语法。
+已支持：物品 ID、数量、数据值、`can_place_on`、`can_destroy`、`item_lock`、`keep_on_death`。
+基岩版暂不支持 Java 版的富文本、属性、食物效果等组件语法；AI 模式暂不支持基岩版。
 
-## 保存方式
+Minecraft 指令语法会随版本变化，本项目以实测语法为准。如果某个组件在游戏里报错，
+请以游戏提示为准，并反馈可复现的正确指令和错误指令。
 
-当前 Tauri + Vue 版本使用 WebView 本地存储保存草稿和界面设置：
-
-```text
-localStorage
-```
-
-当前使用的本地存储键：
-
-```text
-give-generator-pyside-autosave
-give-generator-animation
-```
-
-说明：
-
-- `give-generator-pyside-autosave`：自动保存的表单草稿
-- `give-generator-animation`：界面动画开关
-- 模板通过软件内的“保存模板”和“读取模板”导出 / 导入 JSON 文件
-- 当前版本已停止使用 `%APPDATA%\Give指令生成器\templates\` 作为模板目录
-
-## Java 版已支持组件
-
-当前 Java 1.21.11+ 模式支持：
-
-```text
-custom_name
-item_name
-lore
-rarity
-enchantment_glint_override
-enchantments
-attribute_modifiers
-can_place_on
-can_break
-unbreakable
-glider
-death_protection
-damage
-max_damage
-max_stack_size
-repair_cost
-tooltip_display
-food
-consumable
-on_consume_effects
-tool
-tool.rules
-```
-
-## 基岩版已支持内容
-
-当前基岩版模式支持：
-
-```text
-物品 ID
-数量
-数据值
-can_place_on
-can_destroy
-item_lock
-keep_on_death
-```
-
-## 模板文件
-
-模板使用 JSON 文件保存，可以通过软件内的“保存模板”和“读取模板”导入导出。
-
-示例用途：
-
-- 保存常用 OP 物品
-- 保存测试指令
-- 保存不同版本配置
-- 分享给其他用户
-
-## 开发运行
-
-```powershell
-npm install
-npm run tauri dev
-```
-
-## 打包 Windows 安装包
-
-```powershell
-npm run tauri build
-```
-
-打包产物在：
-
-```text
-src-tauri/target/release/bundle/
-```
-
-Windows 安装包在：
-
-```text
-src-tauri/target/release/bundle/nsis/
-```
-
-直接运行的程序本体在：
-
-```text
-src-tauri/target/release/soul-lantern.exe
-```
-
-## 键盘
+## 快捷键
 
 | 键 | 作用 |
 |---|---|
-| `F11` | 全屏 / 退出全屏 |
+| `Ctrl+Z` / `Ctrl+Y` | 手动模式撤销 / 重做 |
 | `Ctrl+Enter` | AI 模式里直接发起生成 |
+| `F11` | 全屏 / 退出全屏 |
 
-## 注意事项
+## 反馈
 
-Minecraft 指令组件语法会随版本变化。
+- [GitHub Issues](https://github.com/ReQiao/soul-lantern/issues)（推荐）
+- [B 站私信](https://space.bilibili.com/3690984732887987/)（打不开 GitHub、又没有加速器时用）
 
-本项目当前以实测语法为准，不保证所有 Minecraft 版本都兼容。  
-如果某个组件在游戏中报错，请以游戏实际提示为准，并提交可复现的正确指令和错误指令。
+软件里「设置 → 反馈问题」可以一键复制诊断信息（版本、系统、最近的错误），贴进反馈里能帮我们更快找到问题。
 
-## 界面出问题时的应急开关
+---
 
-界面的液态玻璃（面板/弹窗边缘那圈折射）用的是 `backdrop-filter` 引用 SVG 滤镜，
-只有 Chromium 内核支持。macOS 版用的是系统的 WKWebView，会自动退回纯模糊，
-观感上差别很小。
+## 开发
 
-万一某台机器上玻璃显示异常（显卡驱动、某个 WebView2 版本），不用等新版本，
-在开发者工具的控制台里敲一行然后刷新即可强制退回纯模糊：
+技术栈：**Tauri v2 + Vue 3 + TypeScript**，Rust 负责与服务端通信、一键部署等本地能力。
+
+```powershell
+npm install
+npm run tauri dev      # 开发运行
+npm run tauri build    # 打包，产物在 src-tauri/target/release/bundle/
+```
+
+检查与测试：
+
+```powershell
+./node_modules/.bin/vue-tsc --noEmit   # 类型检查
+npm test                               # 前端测试（指令构建器、玻璃、Markdown）
+cd src-tauri; cargo test --lib         # Rust 单元测试
+node scripts/csp-check.mjs             # 用正式 CSP 跑一遍打包产物，列出被拦截的资源（需先 npm run build）
+```
+
+版本号有两套：`package.json` / `Cargo.toml` / `tauri.conf.json` 里是纯数字的内部版本（如 `5.0.0`，服务端按它判断新旧），
+`src/logic/version.ts` 和 `src-tauri/installer/hooks.nsh` 里是给人看的显示版本（如 `5.0-rc1`），发版时一起改。
+
+AI 模式依赖的服务端不在本仓库内（见下方「许可与授权」），开发时连不上服务端不影响手动模式。
+
+### 界面出问题时的应急开关
+
+液态玻璃的边缘折射用的是 `backdrop-filter` 引用 SVG 滤镜，只有 Chromium 内核支持；
+macOS 版用的是系统 WKWebView，会自动退回纯模糊。万一某台机器上玻璃显示异常，
+在开发者工具的控制台里执行一行然后刷新即可：
 
 ```js
-localStorage.setItem('soul-lantern-glass', 'off')   // 强制纯模糊
+localStorage.setItem('soul-lantern-glass', 'off')   // 强制纯模糊（和 macOS 看到的一样）
 localStorage.setItem('soul-lantern-glass', 'on')    // 强制开折射
 localStorage.removeItem('soul-lantern-glass')       // 恢复自动判断
 ```
 
-这个开关同时也是**验证降级效果的唯一手段**：设成 `off` 看到的界面，
-和 macOS 用户看到的完全一样，不需要真有一台 Mac。
-
-另有一个测试开关，用来在浏览器/开发环境里走通"未登录点 AI 模式"那条分支
-（正常情况下它需要同时满足"跑在桌面端"和"服务端要求登录"，开发时两条都不成立）：
+另有一个测试开关，用来在开发环境里走通「未登录点 AI 模式」那条分支（只会**多加**一道门禁，不会绕过任何鉴权）：
 
 ```js
 localStorage.setItem('soul-lantern-gate', 'on')     // 强制显示登录门禁
 localStorage.removeItem('soul-lantern-gate')        // 恢复正常
 ```
-
-它只会**多加**一道门禁，不会绕过任何鉴权。
-
-## 开发计划
-
-- 增加更多 Minecraft Java 版本
-- 增加更多基岩版兼容规则
-- 增加刷怪蛋数据支持
-- 优化模板系统
-- 优化动画与交互细节
-- 增加更多命令组件
 
 ## 许可与授权
 
@@ -237,7 +189,7 @@ Copyright (C) 2026 ReQiao
 
 ### AI 模式依赖的服务端不在本仓库内
 
-手动模式完全在本地运行，不联网。AI 模式需要连接开发者自行运营的服务端——
+手动模式完全在本地运行，不联网。AI 模式和万灯集需要连接开发者自行运营的服务端——
 **那个服务端是独立作品，不属于本仓库，也不以 AGPL 授权**。本仓库只包含客户端。
 
 ### 灵魂币与激活码买的是什么
