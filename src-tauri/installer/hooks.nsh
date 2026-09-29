@@ -7,11 +7,19 @@
 ; 模板自带的 NSIS_HOOK_PREINSTALL 在 Section Install 里，比 WebView2 那步还晚，弹窗来不及用。
 ;
 ; 注意：这个文件必须是 UTF-8 **带 BOM**，否则 NSIS 会按系统代码页读，中文变乱码。
-; 发版时把下面的 5.0-rc1 和 src/logic/version.ts 的 DISPLAY_VERSION 一起改。
+;
+; 发版时只改下面两行，和 src/logic/version.ts 的 DISPLAY_VERSION / IS_PRERELEASE 保持一致
+; （发布脚本 build_release.py 会一起改）。
+!define SL_DISPLAY_VERSION "5.0-rc1"
+!define SL_PRERELEASE 1
 
-!define MUI_WELCOMEPAGE_TITLE "欢迎安装灵魂灯笼 5.0-rc1"
-!define MUI_WELCOMEPAGE_TEXT "这个向导会带你装好「灵魂灯笼」5.0-rc1（测试版）。$\r$\n$\r$\n安装前请先关闭正在运行的灵魂灯笼。$\r$\n$\r$\n测试版的账号数据可能会在正式版前清空；遇到问题欢迎在软件的「设置 → 反馈问题」里告诉我们。$\r$\n$\r$\n点击「下一步」继续。"
-!define MUI_FINISHPAGE_TITLE "灵魂灯笼 5.0-rc1 安装完成"
+!define MUI_WELCOMEPAGE_TITLE "欢迎安装灵魂灯笼 ${SL_DISPLAY_VERSION}"
+!if ${SL_PRERELEASE} == 1
+  !define MUI_WELCOMEPAGE_TEXT "这个向导会带你装好「灵魂灯笼」${SL_DISPLAY_VERSION}（测试版）。$\r$\n$\r$\n安装前请先关闭正在运行的灵魂灯笼。$\r$\n$\r$\n测试版的账号数据可能会在正式版前清空；遇到问题欢迎在软件的「设置 → 反馈问题」里告诉我们。$\r$\n$\r$\n点击「下一步」继续。"
+!else
+  !define MUI_WELCOMEPAGE_TEXT "这个向导会带你装好「灵魂灯笼」${SL_DISPLAY_VERSION}。$\r$\n$\r$\n安装前请先关闭正在运行的灵魂灯笼。$\r$\n$\r$\n遇到问题欢迎在软件的「设置 → 反馈问题」里告诉我们。$\r$\n$\r$\n点击「下一步」继续。"
+!endif
+!define MUI_FINISHPAGE_TITLE "灵魂灯笼 ${SL_DISPLAY_VERSION} 安装完成"
 
 ; 没有 WebView2 时先说清楚再装。
 ;

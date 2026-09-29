@@ -8,7 +8,8 @@
  *   测试版：内部 5.0.0 → 显示 5.0-rc1
  *   正式版：内部 5.0.1 → 显示 5.0
  *
- * 安装包欢迎页 / 完成页上的版本名在 src-tauri/installer/hooks.nsh，发版时也要跟着改。
+ * 安装包欢迎页 / 完成页的版本名在 src-tauri/installer/hooks.nsh（SL_DISPLAY_VERSION / SL_PRERELEASE），
+ * 发版时一起改；本机的发布脚本 build_release.py 会把这几处和内部版本号一次改齐。
  */
 export const DISPLAY_VERSION = "5.0-rc1";
 

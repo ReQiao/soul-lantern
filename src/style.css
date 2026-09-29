@@ -2869,6 +2869,11 @@ button#primary,
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 内边距和 .ai-card 一致。.card 本身不带内边距，漏了这条内容会直接贴着圆角边框，
+     标题「万灯集」和「← 返回列表」看起来像被窗口左边切掉了一截。 */
+  min-height: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
   text-align: left;
 }
 
@@ -3102,6 +3107,10 @@ button#primary,
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 同 .plaza-card：.card 不带内边距，要自己给 */
+  min-height: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
   text-align: left;
 }
 
