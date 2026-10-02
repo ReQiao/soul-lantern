@@ -1219,13 +1219,6 @@ function textOptions(items: string[]): SelectOption[] {
           <button
             type="button"
             role="tab"
-            :aria-selected="mode === 'ai'"
-            :class="{ active: mode === 'ai' }"
-            @click="selectMode('ai', $event)"
-          >AI 模式</button>
-          <button
-            type="button"
-            role="tab"
             :aria-selected="mode === 'plaza'"
             :class="{ active: mode === 'plaza' }"
             @click="selectMode('plaza')"
