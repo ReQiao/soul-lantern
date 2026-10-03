@@ -3,22 +3,24 @@
  * 存档部署面板：手动模式 / AI 模式共用。
  *
  * 存档定位两条路：
- *   1. 自动扫描 .minecraft/saves（走官方启动器的人多数能扫到）。
+ *   1. 自动扫描：打开就扫默认 .minecraft 的 saves 和 versions/<实例>/saves。
  *   2. 手动「浏览选择存档」——很多人不用官方启动器（PCL2/HMCL/多人合租的服主等），
  *      .minecraft 目录可能在任何地方，必须能让用户自己弹出系统文件夹选择框去挑，
- *      不能只靠自动扫描。
+ *      不能只靠自动扫描。选过一次之后，那个 .minecraft 也会被记住、以后一起扫。
+ * 存档列表和选中的存档由 logic/saves.ts 统一管着，两个部署面板共用。
  *
  * commands 是一次性命令（部署后需要玩家手动执行一次 run_command），
  * loopCommands 是需要每 tick 持续侦测的命令（自动挂 tick.json，/reload 后即生效，
  * 不需要玩家再做任何事）——由调用方（AiPanel 的 execute loop:true 分流、
  * 或手动模式的单条 give）分别传入，允许只有一边非空。
  */
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { detectGiveVersionFromRaw, type GiveVersion } from "../logic/builder";
 import { VERSIONS } from "../data/catalog";
 import InfoTip from "./InfoTip.vue";
+import { loadSavesOnce, pickSave, refreshSaves as rescan, saveLabel, saves, selectedSave } from "../logic/saves";
 
 const props = defineProps<{
   commands: string[];
@@ -29,11 +31,6 @@ const emit = defineEmits<{
   (e: "toast", message: string, duration?: number): void;
   (e: "update:version", version: GiveVersion): void;
 }>();
-
-interface SaveInfo {
-  name: string;
-  path: string;
-}
 
 interface DeployResult {
   packPath: string;
@@ -46,8 +43,6 @@ interface DeployResult {
 const desktop = isTauri();
 const loopCommands = computed(() => props.loopCommands ?? []);
 
-const saves = ref<SaveInfo[]>([]);
-const selectedSave = ref("");
 const deployed = ref<DeployResult | null>(null);
 const deploying = ref(false);
 const errorText = ref("");
@@ -91,15 +86,20 @@ const canDeploy = computed(
     !!selectedSave.value,
 );
 
+onMounted(() => {
+  if (desktop) void loadSavesOnce();
+});
+
 async function refreshSaves() {
   if (!desktop) return;
+  errorText.value = "";
   try {
-    saves.value = await invoke<SaveInfo[]>("datapack_list_saves", { savesDir: null });
-    if (saves.value.length === 0) {
-      emit("toast", "没有找到存档，可能 Minecraft 装在非默认位置，试试右边「浏览选择存档」", 3500);
-    } else if (!selectedSave.value) {
-      selectedSave.value = saves.value[0].path;
-    }
+    const n = await rescan();
+    emit(
+      "toast",
+      n === 0 ? "没有找到存档，可能 Minecraft 装在非默认位置，试试右边「浏览选择存档」" : `找到 ${n} 个存档`,
+      3500,
+    );
   } catch (err) {
     errorText.value = `读取存档列表失败：${err instanceof Error ? err.message : String(err)}`;
   }
@@ -120,12 +120,9 @@ async function browseSave() {
       title: "选择一个 Minecraft 存档文件夹（saves 里的某一个世界）",
     });
     if (typeof picked !== "string") return; // 用户取消
-    selectedSave.value = picked;
-    const name = picked.split(/[\\/]/).filter(Boolean).pop() ?? picked;
-    if (!saves.value.some((s) => s.path === picked)) {
-      saves.value = [...saves.value, { name, path: picked }];
-    }
-    emit("toast", `已选择存档：${name}`);
+    errorText.value = "";
+    const info = await pickSave(picked);
+    emit("toast", `已选择存档：${info.name}，同一个目录下的其它存档以后也会自动扫到`, 3500);
   } catch (err) {
     errorText.value = `选择存档失败：${err instanceof Error ? err.message : String(err)}`;
   }
@@ -173,7 +170,7 @@ async function copyText(text: string) {
     <div class="ai-deploy-row">
       <select v-model="selectedSave" :disabled="saves.length === 0">
         <option v-if="saves.length === 0" value="">还没选存档</option>
-        <option v-for="s in saves" :key="s.path" :value="s.path">{{ s.name }}</option>
+        <option v-for="s in saves" :key="s.path" :value="s.path" :title="s.path">{{ saveLabel(s, saves) }}</option>
       </select>
       <button type="button" :disabled="!desktop" @click="refreshSaves">扫描存档</button>
       <button type="button" :disabled="!desktop" @click="browseSave">浏览选择存档…</button>
@@ -182,7 +179,8 @@ async function copyText(text: string) {
       </button>
     </div>
     <p class="deploy-hint">
-      不用官方启动器？点「浏览选择存档」直接在 saves 文件夹里选一个存档即可，不依赖自动扫描。
+      会自动扫描 .minecraft 里的 saves 和开了版本隔离的 versions/实例/saves。用 PCL、HMCL 等启动器扫不到的话，
+      点「浏览选择存档」选一次，同一个目录下的其它存档以后也会自动出现。
     </p>
 
     <p v-if="versionMismatch" class="deploy-version-mismatch">

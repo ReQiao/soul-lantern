@@ -62,6 +62,7 @@ pub fn run() {
             contributor::telemetry_system_info,
             contributor::telemetry_send,
             datapack::datapack_list_saves,
+            datapack::datapack_remember_save,
             datapack::datapack_deploy,
             datapack::datapack_default_saves_dir,
             datapack::datapack_detect_version,
