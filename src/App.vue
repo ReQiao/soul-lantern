@@ -16,6 +16,7 @@ import AuthModal from "./components/AuthModal.vue";
 import NoticeModal from "./components/NoticeModal.vue";
 import PlazaPanel from "./components/PlazaPanel.vue";
 import AdminPanel from "./components/AdminPanel.vue";
+import DatapackPanel from "./components/DatapackPanel.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import { getClarity, installLiquidGlass, setClarity } from "./logic/glass";
 import { useMorphPopup } from "./logic/morphPopup";
@@ -321,8 +322,8 @@ const { onEnter: onTplEnter, onLeave: onTplLeave } = useMorphPopup({
   getOrigin: () => templateBtnEl.value,
   getAnimate: () => animationEnabled.value,
 });
-/** 手动填表 / AI 自然语言 / 万灯集 / 管理页，共用顶部的版本选择。 */
-type Mode = "manual" | "ai" | "plaza" | "admin";
+/** 手动填表 / AI 自然语言 / 数据包 / 万灯集 / 管理页，共用顶部的版本选择。 */
+type Mode = "manual" | "ai" | "datapack" | "plaza" | "admin";
 const mode = ref<Mode>("manual");
 
 /**
@@ -1226,6 +1227,13 @@ function textOptions(items: string[]): SelectOption[] {
           <button
             type="button"
             role="tab"
+            :aria-selected="mode === 'datapack'"
+            :class="{ active: mode === 'datapack' }"
+            @click="selectMode('datapack')"
+          >数据包</button>
+          <button
+            type="button"
+            role="tab"
             :aria-selected="mode === 'plaza'"
             :class="{ active: mode === 'plaza' }"
             @click="selectMode('plaza')"
@@ -1317,6 +1325,9 @@ function textOptions(items: string[]): SelectOption[] {
       @use-ai="useAiFromPlaza"
       @toast="showToast"
     />
+
+    <!-- 数据包模式，现在是空壳，没有要保住的编辑状态，用 v-if。 -->
+    <DatapackPanel v-if="mode === 'datapack'" />
 
     <!-- 管理页。用 v-if 而不是 v-show：它是极少数人极少数时候才进的地方，
          没必要为它常驻一份 DOM 和一堆 watch。 -->

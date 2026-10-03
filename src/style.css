@@ -1955,7 +1955,8 @@ button#primary,
 .split-layout,
 .preview-card,
 .admin-card,
-.plaza-card {
+.plaza-card,
+.datapack-card {
   animation: mode-content-rise 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
@@ -3830,4 +3831,59 @@ button#primary,
   .update-bar-leave-to {
     transform: translateX(-50%);
   }
+}
+
+/* ---------------------------------------------------------------- 数据包（空壳） */
+
+.datapack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 同 .plaza-card：.card 不带内边距，要自己给 */
+  min-height: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
+  text-align: left;
+}
+.datapack-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.datapack-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.datapack-soon {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.datapack-hint {
+  margin: 0;
+  color: var(--muted, #93a4c8);
+  font-size: 13px;
+}
+.datapack-planned {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.datapack-planned li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+.datapack-planned strong {
+  flex: none;
+  min-width: 4em;
 }
