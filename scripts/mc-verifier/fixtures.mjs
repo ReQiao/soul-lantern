@@ -39,7 +39,8 @@ for (const [version, commands] of Object.entries(fixtures)) {
     const setup = await rcon.send(`summon zombie 0 100 0 {NoAI:1b,NoGravity:1b,Invulnerable:1b,Tags:["sl_verify"],${equipment}}`);
     if (!/Summoned/.test(setup)) throw new Error(`测试实体创建失败：${setup}`);
     let targetReady = false;
-    for (let attempt = 0; attempt < 10 && !targetReady; attempt++) {
+    const readyDeadline = Date.now() + 30000;
+    while (!targetReady && Date.now() < readyDeadline) {
       const ready = await rcon.send('data get entity @e[tag=sl_verify,limit=1] Tags');
       targetReady = /sl_verify/.test(ready);
     }
