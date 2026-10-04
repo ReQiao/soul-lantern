@@ -10,29 +10,39 @@ const fixtures = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const packMetadata = process.argv[3] ? JSON.parse(fs.readFileSync(process.argv[3], 'utf8')) : {};
 const cache = process.env.SOUL_LANTERN_MC_CACHE || path.join(here, 'cache');
 let failures = 0;
+const requested = process.env.MC_VERIFY_VERSIONS?.trim().split(/\s+/);
+if (requested && !requested.every(version => fixtures[version])) throw new Error('验证版本没有对应构建样例');
 for (const [version, commands] of Object.entries(fixtures)) {
+  if (requested && !requested.includes(version)) continue;
   const results = [];
   let server, rcon;
   try {
-    const jarPath = await ensureServerJar(version, cache, console.log);
+    let jarPath;
+    for (let attempt = 1; ; attempt++) {
+      try { jarPath = await ensureServerJar(version, cache, console.log); break; }
+      catch (error) { if (attempt === 3) throw error; }
+    }
     server = await startServer({jarPath, version, log: console.log, packMetadata:packMetadata[version]});
     rcon = new RconClient(server.rcon);
     await rcon.connect();
-    await rcon.send('forceload add 0 0');
+    const load = await rcon.send('forceload add 0 0', {timeoutMs:30000, graceMs:25000});
+    console.log(version, '加载临时区块:', load);
     if (packMetadata[version]) {
       const response = await rcon.send('function sl_verify:run');
       const okay = /sl_pack_loaded|Executed.*command/.test(response) && !/Unknown|<--\[HERE\]/.test(response);
       results.push({kind:'client_datapack_load',response,okay});
       if (!okay) failures++;
     }
-    await rcon.send('gamerule doMobSpawning false');
+
     const modern = !/^1\.(20|21\.[1-4]$)/.test(version) && version !== '1.21';
     const equipment = modern ? 'equipment:{mainhand:{id:"minecraft:diamond_sword",count:1}}' : 'HandItems:[{id:"minecraft:diamond_sword",count:1},{}]';
     await rcon.send(`summon zombie 0 100 0 {NoAI:1b,Tags:["sl_verify"],${equipment}}`);
     for (const {kind, command} of commands) {
+      const logBefore = server.logTail.join('\n');
       const response = await rcon.send(command.replace(/^\//, ''));
+      const sayLogged = kind === 'say' && server.logTail.join('\n') !== logBefore && server.logTail.some(line => /\[Rcon\].*验证/i.test(line));
       const expectedNoPlayer = kind === 'give' && /No player was found/.test(response);
-      const okay = !!response && (expectedNoPlayer || !/<--\[HERE\]|Unknown|Expected|Incorrect|Unexpected|Invalid|Failed to|Could not|cannot|can't|Error|No entity was found/i.test(response));
+      const okay = sayLogged || !!response && (expectedNoPlayer || !/<--\[HERE\]|Unknown|Expected|Incorrect|Unexpected|Invalid|Failed to|Could not|cannot|can't|Error|No entity was found/i.test(response));
       results.push({kind, command, response, okay});
       if (!okay) failures++;
       console.log(`${version} ${kind}: ${okay ? 'PASS' : 'FAIL'} ${response}`);
@@ -69,7 +79,7 @@ for (const [version, commands] of Object.entries(fixtures)) {
     if (server) await server.stop();
     const out = path.join(here,'results',version);
     fs.mkdirSync(out,{recursive:true});
-    fs.writeFileSync(path.join(out,'builder.json'),JSON.stringify({version,results},null,2));
+    fs.writeFileSync(path.join(out,'builder.json'),JSON.stringify({version,results,logTail:server?.logTail},null,2));
   }
 }
 if (failures) throw new Error(`${failures} 个构建器验证项失败`);
