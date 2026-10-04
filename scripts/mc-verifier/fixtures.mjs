@@ -36,7 +36,7 @@ for (const [version, commands] of Object.entries(fixtures)) {
 
     const modern = !/^1\.(20|21\.[1-4]$)/.test(version) && version !== '1.21';
     const equipment = modern ? 'equipment:{mainhand:{id:"minecraft:diamond_sword",count:1}}' : 'HandItems:[{id:"minecraft:diamond_sword",count:1},{}]';
-    await rcon.send(`summon zombie 0 100 0 {NoAI:1b,Tags:["sl_verify"],${equipment}}`);
+    await rcon.send(`summon zombie 0 100 0 {NoAI:1b,NoGravity:1b,Invulnerable:1b,Tags:["sl_verify"],${equipment}}`);
     for (const {kind, command} of commands) {
       const logBefore = server.logTail.join('\n');
       const response = await rcon.send(command.replace(/^\//, ''));
