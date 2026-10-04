@@ -17,7 +17,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureServerJar, loadManifest } from "./mc-verifier/mojang.mjs";
@@ -246,7 +246,7 @@ async function main() {
   const registriesPath = join(genDir, "reports", "registries.json");
   if (!existsSync(registriesPath)) {
     const java = findJava();
-    execFileSync(java, ["-Xmx1024m", "-DbundlerMainClass=net.minecraft.data.Main", "-jar", jar, "--reports", "--output", genDir], {
+    execFileSync(java, ["-Xmx1024m", "-DbundlerMainClass=net.minecraft.data.Main", "-jar", jar, "--reports", "--server", "--output", genDir], {
       stdio: ["ignore", "ignore", "inherit"],
       env: { ...process.env, JAVA_TOOL_OPTIONS: "" },
       cwd: CACHE,
@@ -277,9 +277,19 @@ async function main() {
 
   if (snapshotOutput) {
     const ids = (name) => Object.keys(registries[`minecraft:${name}`]?.entries ?? {}).sort();
+    let enchantments = ids("enchantment");
+    const enchantDir = join(genDir, "data", "minecraft", "enchantment");
+    if (!enchantments.length && existsSync(enchantDir)) enchantments = readdirSync(enchantDir).filter(f => f.endsWith('.json')).map(f => `minecraft:${f.slice(0,-5)}`).sort();
+    if (!enchantments.length) throw new Error("无法读取官方附魔目录");
+    const effectRows = ids("mob_effect").map(id => [id, zh[`effect.minecraft.${id.slice(10)}`] || id]);
+    const attributeRows = ids("attribute").map(id => {
+      const name = id.slice(10).replace(/^(generic|player|zombie)\./, "");
+      const label = zh[`attribute.name.${name}`] || zh[`attribute.name.generic.${name}`] || zh[`attribute.name.player.${name}`] || zh[`attribute.name.zombie.${name}`] || name;
+      return [`minecraft:${name}`, label];
+    });
     writeFileSync(snapshotOutput, JSON.stringify({
       minecraftVersion: version, items, blocks, entities, particles,
-      enchantments: ids("enchantment"), effects: ids("mob_effect"), attributes: ids("attribute"),
+      enchantments, effects: ids("mob_effect"), attributes: ids("attribute"), effectRows, attributeRows,
     }));
   }
 
