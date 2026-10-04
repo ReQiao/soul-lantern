@@ -38,6 +38,12 @@ for (const [version, commands] of Object.entries(fixtures)) {
     const equipment = modern ? 'equipment:{mainhand:{id:"minecraft:diamond_sword",count:1}}' : 'HandItems:[{id:"minecraft:diamond_sword",count:1},{}]';
     const setup = await rcon.send(`summon zombie 0 100 0 {NoAI:1b,NoGravity:1b,Invulnerable:1b,Tags:["sl_verify"],${equipment}}`);
     if (!/Summoned/.test(setup)) throw new Error(`测试实体创建失败：${setup}`);
+    let targetReady = false;
+    for (let attempt = 0; attempt < 10 && !targetReady; attempt++) {
+      const ready = await rcon.send('data get entity @e[tag=sl_verify,limit=1] Tags');
+      targetReady = /sl_verify/.test(ready);
+    }
+    if (!targetReady) throw new Error("测试实体未进入可查询的加载区块");
     for (const {kind, command} of commands) {
       const logBefore = server.logTail.join('\n');
       const response = await rcon.send(command.replace(/^\//, ''));
