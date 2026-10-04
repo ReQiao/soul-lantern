@@ -24,12 +24,15 @@ import { ensureServerJar, loadManifest } from "./mc-verifier/mojang.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // 复用语法验证器的 server.jar 缓存（带 sha1 校验，且已在 .gitignore 中）
-const CACHE = join(ROOT, "scripts", "mc-verifier", "cache");
+const CACHE = process.env.SOUL_LANTERN_MC_CACHE || join(ROOT, "scripts", "mc-verifier", "cache");
 const OUT = join(ROOT, "src", "data", "items.generated.ts");
 
 const args = process.argv.slice(2);
 const useSnapshot = args.includes("--snapshot");
-const wantVersion = args.find((a) => !a.startsWith("--"));
+const wantVersion = args[0]?.startsWith("--") ? undefined : args[0];
+const option = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
+const output = option("--output") || OUT;
+const snapshotOutput = option("--snapshot-output");
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -62,7 +65,7 @@ function findJava() {
         env: { ...process.env, JAVA_TOOL_OPTIONS: "" },
       });
       const major = Number(/(?:openjdk|java) (\d+)/i.exec(text)?.[1] ?? 0);
-      if (major >= 25) return java;
+      if (major >= (Number(wantVersion?.split(".")[0]) >= 26 ? 25 : 21)) return java;
     } catch {
       // 试下一个
     }
@@ -243,7 +246,7 @@ async function main() {
   const registriesPath = join(genDir, "reports", "registries.json");
   if (!existsSync(registriesPath)) {
     const java = findJava();
-    execFileSync(java, ["-DbundlerMainClass=net.minecraft.data.Main", "-jar", jar, "--reports", "--output", genDir], {
+    execFileSync(java, ["-Xmx1024m", "-DbundlerMainClass=net.minecraft.data.Main", "-jar", jar, "--reports", "--output", genDir], {
       stdio: ["ignore", "ignore", "inherit"],
       env: { ...process.env, JAVA_TOOL_OPTIONS: "" },
       cwd: CACHE,
@@ -272,6 +275,14 @@ async function main() {
   const entities = buildEntities(entityIds, zh);
   const particles = buildParticles(particleIds);
 
+  if (snapshotOutput) {
+    const ids = (name) => Object.keys(registries[`minecraft:${name}`]?.entries ?? {}).sort();
+    writeFileSync(snapshotOutput, JSON.stringify({
+      minecraftVersion: version, items, blocks, entities, particles,
+      enchantments: ids("enchantment"), effects: ids("mob_effect"), attributes: ids("attribute"),
+    }));
+  }
+
   const stats = {};
   for (const [, , , cat] of items) stats[cat] = (stats[cat] || 0) + 1;
 
@@ -281,7 +292,7 @@ async function main() {
     `// 重新生成：node scripts/gen-catalog.mjs ${version}\n\n`;
 
   writeFileSync(
-    OUT,
+    output,
     banner +
       `export const GENERATED_MC_VERSION = ${JSON.stringify(version)};\n\n` +
       `export const ITEMS = [\n${serialize(items)}\n] as const;\n\n` +

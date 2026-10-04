@@ -1,0 +1,47 @@
+name: Minecraft 语法验证
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: '待验证的正式版，空格分隔'
+        default: '26.3'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: npm ci
+      - run: npm test && npm run build
+      - name: 在隔离的临时世界验证
+        env:
+          MC_VERSIONS: ${{ inputs.versions }}
+        run: |
+          node --input-type=module <<'JS'
+          import { spawnSync } from 'node:child_process';
+          const versions = process.env.MC_VERSIONS.trim().split(/\s+/);
+          if (!versions.every(v => /^\d+\.\d+(\.\d+)?$/.test(v))) throw new Error('只接受正式版本号');
+          const r = spawnSync(process.execPath, ['scripts/mc-verifier/index.mjs', ...versions], {stdio:'inherit'});
+          process.exit(r.status ?? 1);
+          JS
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: minecraft-syntax-reports
+          path: scripts/mc-verifier/results/
+          retention-days: 14
+          if-no-files-found: error

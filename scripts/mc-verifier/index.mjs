@@ -24,7 +24,7 @@ import { PROBES, classifyResponse } from "./probes.mjs";
 import { buildReport, formatReportText } from "./report.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CACHE_DIR = path.join(__dirname, "cache");
+const CACHE_DIR = process.env.SOUL_LANTERN_MC_CACHE || path.join(__dirname, "cache");
 const RESULTS_DIR = path.join(__dirname, "results");
 
 const log = (msg) => console.log(msg);
@@ -130,6 +130,7 @@ async function main() {
     }
   }
 
+  if (summaries.some(s => s.error || s.fail || s.unknown)) process.exitCode = 1;
   log(`\n=== 总汇总 ===`);
   for (const s of summaries) {
     if (s.error) log(`  ${s.version}: 失败 (${s.error})`);

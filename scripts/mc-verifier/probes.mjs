@@ -46,11 +46,11 @@ export const PROBES = [
   { feature: "enchant_glint", id: "glint_true", command: g("enchantment_glint_override=true"), builderFamilies: ["early", "legacy", "mid", "modern"], note: "发光覆盖" },
 
   // ---- enchantments ----
-  { feature: "enchantments", id: "ench_levels", command: g("enchantments={levels:{unbreaking:1}}"), builderFamilies: ["legacy"], note: "带 levels 外层" },
-  { feature: "enchantments", id: "ench_flat", command: g("enchantments={unbreaking:1}"), builderFamilies: ["early", "mid", "modern"], note: "扁平，无 levels 外层" },
+  { feature: "enchantments", id: "ench_levels", command: g("enchantments={levels:{unbreaking:1}}"), builderFamilies: ["early", "legacy", "mid"], note: "带 levels 外层" },
+  { feature: "enchantments", id: "ench_flat", command: g("enchantments={unbreaking:1}"), builderFamilies: ["modern"], note: "扁平，无 levels 外层" },
 
   // ---- attribute_modifiers ----
-  { feature: "attribute_modifiers", id: "attr_array_type_unquoted_plain", command: g('attribute_modifiers=[{type:armor,amount:1,id:"test:x",operation:add_value}]'), builderFamilies: ["mid", "modern"], note: "数组形式，type 不带引号/无 generic 前缀（builder modern/mid）" },
+  { feature: "attribute_modifiers", id: "attr_array_type_unquoted_plain", command: g('attribute_modifiers=[{type:armor,amount:1,id:"test:x",operation:add_value}]'), builderFamilies: ["modern"], note: "1.21.5 起使用数组格式" },
   { feature: "attribute_modifiers", id: "attr_array_type_quoted_generic", command: g('attribute_modifiers=[{type:"generic.armor",amount:1,id:"test:x",operation:add_value}]'), builderFamilies: [], note: "数组形式，type 带引号且含 generic. 前缀" },
   { feature: "attribute_modifiers", id: "attr_array_type_ns_quoted", command: g('attribute_modifiers=[{type:"minecraft:generic.armor",amount:1,id:"test:x",operation:add_value}]'), builderFamilies: [], note: "数组形式，type 带 minecraft: 命名空间前缀（1.20.5 候选）" },
   { feature: "attribute_modifiers", id: "attr_array_type_ns_unquoted", command: g('attribute_modifiers=[{type:minecraft:generic.armor,amount:1,id:"test:x",operation:add_value}]'), builderFamilies: [], note: "数组形式，type 不带引号但带 minecraft: 前缀（1.20.5 候选）" },
