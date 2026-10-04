@@ -1,6 +1,6 @@
 # Soul Lantern（灵魂灯笼）
 
-一个面向 Minecraft 的指令生成器，支持 **Java 1.20.5 ~ 26.2** 与 **基岩版**。
+一个面向 Minecraft 的指令生成器，支持 **Java 1.20.5 ~ 26.3** 与 **基岩版**。
 
 目标是解决 MC 新手以及指令熟手在编写指令 JSON 和物品组件时步骤繁琐、容易写错的问题：
 可以在**手动模式**里一项项点选生成，也可以在 **AI 模式**里用大白话描述想要的效果，
@@ -88,7 +88,7 @@ AI 生成会按真实调用量扣除**灵魂币**。测试期间**暂不开放�
 
 ### Java 版
 
-版本选择：Java 1.20.5 / 1.21 / 1.21.1 ~ 1.21.6 / 1.21.9 / 1.21.11+ / 26.1 / 26.2+。
+版本选择：Java 1.20.5 / 1.21 / 1.21.1 ~ 1.21.6 / 1.21.9 / 1.21.11+ / 26.1 / 26.2 / 26.3。
 生成的是新版物品组件格式，例如：
 
 ```mcfunction
@@ -150,13 +150,17 @@ npm run tauri build    # 打包，产物在 src-tauri/target/release/bundle/
 
 ```powershell
 ./node_modules/.bin/vue-tsc --noEmit   # 类型检查
-npm test                               # 前端测试（指令构建器、玻璃、Markdown）
+npm test                               # 前端测试（指令构建器、版本目录、玻璃、Markdown）
 cd src-tauri; cargo test --lib         # Rust 单元测试
 node scripts/csp-check.mjs             # 用正式 CSP 跑一遍打包产物，列出被拦截的资源（需先 npm run build）
 ```
 
 版本号有两套：`package.json` / `Cargo.toml` / `tauri.conf.json` 里是纯数字的内部版本（如 `5.0.0`，服务端按它判断新旧），
 `src/logic/version.ts` 和 `src-tauri/installer/hooks.nsh` 里是给人看的显示版本（如 `5.0-rc1`），发版时一起改。
+
+物品、方块、实体和粒子目录按版本读取，来源是官方数据生成器。1.20.5 还通过原版游戏过滤默认关闭的实验物品。切换到旧版时保留草稿中的物品，但生成前会提示不受支持的选择。
+
+更新目录可运行 `node scripts/gen-version-catalogs.mjs`；设置 `SOUL_LANTERN_MC_CACHE` 可以把下载缓存放在其他磁盘。GitHub 的「Minecraft 官方版本目录」和「Minecraft 语法验证」工作流都只手动执行。服务端真实构建输出和数据读回检查在私有仓库运行。
 
 AI 模式依赖的服务端不在本仓库内（见下方「许可与授权」），开发时连不上服务端不影响手动模式。
 

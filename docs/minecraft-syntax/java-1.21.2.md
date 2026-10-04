@@ -21,8 +21,8 @@ builder 路由：`isJava1212Family(version)` -> `buildModernFamily(form, JAVA_1_
 |------|--------------------|--------------|--------------|
 | custom_name / item_name / lore | SNBT 单引号字符串 | 相同 | 不同（modern 用直接 JSON） |
 | rarity / enchantment_glint_override | 同各版本 | 相同 | 相同 |
-| enchantments | 扁平 `{unbreaking:3}` | 不同（legacy 用 `{levels:{...}}`） | 相同 |
-| attribute_modifiers | `[{type:armor,amount,slot?,id:"...",operation}]` | 不同（legacy 用 `{modifiers:[...]}` + `"generic.armor"`） | 相同 |
+| enchantments | `{levels:{unbreaking:3}}`（也接受简写） | 相同 | 不同 |
+| attribute_modifiers | `{modifiers:[{type:armor,amount,slot?,id:"...",operation}]}` | 属性 ID 不再带类别前缀 | modern 输出简写数组 |
 | can_place_on / can_break | `{predicates:[{blocks:"minecraft:stone"}]}` | 相同 | 不同（modern 用 `[{blocks:"..."}]`） |
 | food | `{nutrition,saturation,can_always_eat?}` | 不同（legacy 并入 eat_seconds/effects） | 相同 |
 | consumable | 独立组件，含 consume_seconds/sound/has_consume_particles/on_consume_effects | 不同（legacy 无独立 consumable） | 相同 |
@@ -46,7 +46,7 @@ tooltip_display / hidden_components   （服务器返回 Unknown item component�
 ```
 
 注意：enchantments 在 1.21.2/1.21.3 同时接受 `{levels:{...}}` 与扁平 `{...}`，
-builder 统一输出扁平形式以与 modern 对齐。
+builder 输出 levels 包装，以明确旧版组件结构。
 
 ## 对应测试
 

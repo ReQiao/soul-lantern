@@ -1166,7 +1166,7 @@ export function isJava1212Family(version: GiveVersion): boolean {
 }
 
 /**
- * 1.21.5+ 现代实体 NBT 族：属性用 attributes[]/id/base（无 generic. 前缀）、
+ * 1.21.5+ 现代实体装备与文本族；属性字段从 1.21 起改变，另行判断。
  * 装备用 equipment{} 而非 HandItems[]/ArmorItems[]。基岩版不属于该族。
  */
 export function isModernNbtFamily(version: GiveVersion): boolean {

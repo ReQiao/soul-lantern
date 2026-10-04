@@ -13,7 +13,7 @@
 - 文本格式与 legacy/mid 相同（SNBT 单引号字符串）
 - can_place_on/can_break 与 legacy/mid 相同（predicates 包装）
 - 不支持 consumable、glider、death_protection、tooltip_display
-- attribute_modifiers：所有已知格式均被服务器拒绝，暂不输出
+- attribute_modifiers：当前构建器暂不输出；旧版 UUID 格式尚未实现
 
 builder 路由：`isJava1205Family(version)` -> `buildModernFamily(form, JAVA_1_20_5_PROFILE)`。
 
@@ -23,8 +23,8 @@ builder 路由：`isJava1205Family(version)` -> `buildModernFamily(form, JAVA_1_
 |------|--------------|-----------|--------------|
 | custom_name / item_name / lore | SNBT 单引号字符串 | 相同 | 不同 |
 | rarity / enchantment_glint_override | 同各版本 | 相同 | 相同 |
-| enchantments | 扁平 `{unbreaking:3}` | 相同 | 相同 |
-| attribute_modifiers | **不输出**（所有格式均被拒绝） | 不同 | 不同 |
+| enchantments | `{levels:{unbreaking:3}}`（也接受简写） | 相同 | 不同 |
+| attribute_modifiers | **当前构建器不输出** | 不同 | 不同 |
 | can_place_on / can_break | `{predicates:[{blocks:"minecraft:stone"}]}` | 相同 | 不同 |
 | food | `{nutrition,saturation,can_always_eat?}` | 相同 | 相同 |
 | consumable | **不支持**（服务器返回错误） | 不同 | 不同 |
@@ -45,7 +45,7 @@ food  tool
 ## 不支持 / 已省略组件
 
 ```
-attribute_modifiers   （所有已知格式均被服务器拒绝，格式待考证）
+attribute_modifiers   （旧版 UUID 格式尚未实现）
 consumable            （服务器返回 Unknown item component）
 glider                （服务器返回 Unknown item component）
 death_protection      （服务器返回 Unknown item component）
