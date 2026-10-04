@@ -34,6 +34,7 @@ node scripts/mc-verifier/fixtures.mjs fixtures.json pack-metadata.json
 | 特性 | 变化边界 |
 |---|---|
 | 实体属性 NBT | 1.21 开始使用 `attributes`、`id`、`base`；1.20.5 使用 `Attributes`、`Name`、`Base` |
+| 属性运算关键字 | 1.20.5 起使用 `add_value`、`add_multiplied_base`、`add_multiplied_total`，与 1.21 的标识变化分开 |
 | 属性修饰符标识 | 1.21 开始使用资源位置 `id`；更早版本使用 UUID 与名称 |
 | 属性名称 | 1.21.2 开始移除 `generic.`、`player.`、`zombie.` 前缀 |
 | 实体装备、文本组件 | 1.21.5 开始使用 `equipment` 与直接 SNBT 文本组件；更早版本使用旧装备字段与 JSON 字符串 |
