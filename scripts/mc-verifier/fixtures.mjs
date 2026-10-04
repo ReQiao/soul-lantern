@@ -7,6 +7,7 @@ import { startServer } from './server.mjs';
 import { RconClient } from './rcon.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const packMetadata = process.argv[3] ? JSON.parse(fs.readFileSync(process.argv[3], 'utf8')) : {};
 const cache = process.env.SOUL_LANTERN_MC_CACHE || path.join(here, 'cache');
 let failures = 0;
 for (const [version, commands] of Object.entries(fixtures)) {
@@ -14,10 +15,16 @@ for (const [version, commands] of Object.entries(fixtures)) {
   let server, rcon;
   try {
     const jarPath = await ensureServerJar(version, cache, console.log);
-    server = await startServer({jarPath, version, log: console.log});
+    server = await startServer({jarPath, version, log: console.log, packMetadata:packMetadata[version]});
     rcon = new RconClient(server.rcon);
     await rcon.connect();
     await rcon.send('forceload add 0 0');
+    if (packMetadata[version]) {
+      const response = await rcon.send('function sl_verify:run');
+      const okay = /sl_pack_loaded|Executed.*command/.test(response) && !/Unknown|<--\[HERE\]/.test(response);
+      results.push({kind:'client_datapack_load',response,okay});
+      if (!okay) failures++;
+    }
     await rcon.send('gamerule doMobSpawning false');
     const modern = !/^1\.(20|21\.[1-4]$)/.test(version) && version !== '1.21';
     const equipment = modern ? 'equipment:{mainhand:{id:"minecraft:diamond_sword",count:1}}' : 'HandItems:[{id:"minecraft:diamond_sword",count:1},{}]';

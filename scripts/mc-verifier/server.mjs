@@ -55,8 +55,17 @@ function prepareWorkDir(version) {
  * @param {(msg: string) => void} opts.log
  * @returns {Promise<{workDir, proc, rcon: {port, password}, stop, logTail}>}
  */
-export function startServer({ jarPath, version, startupTimeoutMs = 180000, log = () => {} }) {
+export function startServer({ jarPath, version, startupTimeoutMs = 180000, log = () => {}, packMetadata }) {
   const workDir = prepareWorkDir(version);
+  if (packMetadata) {
+    const pack = path.join(workDir, 'world', 'datapacks', 'sl_verify');
+    for (const folder of ['function', 'functions']) {
+      const dir = path.join(pack, 'data', 'sl_verify', folder);
+      fs.mkdirSync(dir, {recursive:true});
+      fs.writeFileSync(path.join(dir, 'run.mcfunction'), 'say sl_pack_loaded\n');
+    }
+    fs.writeFileSync(path.join(pack, 'pack.mcmeta'), JSON.stringify(packMetadata));
+  }
   // 把 jar 复制进工作目录，避免污染缓存目录
   const localJar = path.join(workDir, "server.jar");
   fs.copyFileSync(jarPath, localJar);
