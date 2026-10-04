@@ -3,6 +3,8 @@ import { getItemCatalog, getEntityCatalog, getEnchantmentCatalog, getEffectCatal
 import { createDefaultForm, buildGiveCommand, parseStoredForm } from './builder.ts';
 import { buildSystemPrompt } from './ai/prompt.ts';
 assert(!getItemCatalog('java_1_20_5').some(row => row[0] === 'minecraft:diamond_spear'));
+assert(!getItemCatalog('java_1_20_5').some(row => row[0] === 'minecraft:mace'));
+assert(getItemCatalog('java_1_21').some(row => row[0] === 'minecraft:mace'));
 assert(getItemCatalog('java_26_3_plus').some(row => row[0] === 'minecraft:diamond_spear'));
 assert(getEntityCatalog('java_1_21').some(row => row[0] === 'minecraft:boat'));
 assert(!getEntityCatalog('java_26_3_plus').some(row => row[0] === 'minecraft:boat'));

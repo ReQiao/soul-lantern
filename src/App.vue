@@ -1511,6 +1511,7 @@ function textOptions(items: string[]): SelectOption[] {
             </div>
 
             <EffectEditor
+                :version="form.version"
               v-else-if="activeTab === '死亡效果'"
               v-model="form.deathEffects"
               title="死亡效果"
@@ -1536,6 +1537,7 @@ function textOptions(items: string[]): SelectOption[] {
               </div>
 
               <EffectEditor
+                :version="form.version"
                 v-else-if="foodToolTab === '食用效果'"
                 v-model="form.consumeEffects"
                 title="食用效果"

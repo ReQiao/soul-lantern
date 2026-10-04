@@ -36,7 +36,9 @@ for (const [key, version] of versions) {
     throw new Error(`${version} 的注册表为空，拒绝覆盖现有目录`);
   }
 }
-writeFileSync(path.join(root, "src/data/catalog-versions.generated.json"), JSON.stringify(catalogs));
+const versionFile = path.join(scratch, "catalogs.json");
+writeFileSync(versionFile, JSON.stringify(catalogs));
+await filterExperimentalCatalog(versionFile, process.env.SOUL_LANTERN_MC_CACHE || path.join(root, "scripts/mc-verifier/cache"));
+writeFileSync(path.join(root, "src/data/catalog-versions.generated.json"), readFileSync(versionFile));
 writeFileSync(path.join(root, "src/data/items.generated.ts"), readFileSync(path.join(scratch, "26.3.ts")));
-await filterExperimentalCatalog(path.join(root, "src/data/catalog-versions.generated.json"), process.env.SOUL_LANTERN_MC_CACHE || path.join(root, "scripts/mc-verifier/cache"));
 console.log("已更新各版本目录和 26.3 最新目录");

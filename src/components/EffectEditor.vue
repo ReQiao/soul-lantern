@@ -4,7 +4,7 @@ import CatalogCombo from "./CatalogCombo.vue";
 import CustomSelect from "./CustomSelect.vue";
 import InfoTip from "./InfoTip.vue";
 import NumberInput from "./NumberInput.vue";
-import { EFFECTS, EFFECT_TYPES } from "../data/catalog";
+import { EFFECT_TYPES } from "../data/catalog";
 import {
   fmtNumber,
   mapCatalog,
@@ -12,16 +12,21 @@ import {
   pairValue,
   type EffectGroup,
   type EffectItem,
+  type GiveVersion,
 } from "../logic/builder";
+
+import { getEffectCatalog } from "../logic/catalogs";
 
 interface SelectOption {
   label: string;
   value: string;
 }
 
-defineProps<{
+const props = defineProps<{
   title: string;
+  version: GiveVersion;
 }>();
+const effectCatalog = computed(() => getEffectCatalog(props.version));
 
 const emit = defineEmits<{
   toast: [message: string];
@@ -73,14 +78,14 @@ function addSub() {
   if (!group.effects) group.effects = [];
   if (group.type === "apply_effects") {
     group.effects.push({
-      id: mapCatalog(EFFECTS, effect.value),
+      id: mapCatalog(effectCatalog.value, effect.value),
       duration: duration.value,
       amplifier: amplifier.value,
       show_particles: showParticles.value !== "否",
       show_icon: showIcon.value !== "否",
     });
   } else {
-    group.effects.push(mapCatalog(EFFECTS, effect.value));
+    group.effects.push(mapCatalog(effectCatalog.value, effect.value));
   }
 }
 
@@ -100,7 +105,7 @@ function summary(group: EffectGroup): string {
 
 function effectText(value: EffectItem | string): string {
   const id = typeof value === "string" ? value : value.id;
-  for (const row of EFFECTS) {
+  for (const row of effectCatalog.value) {
     if (id === row[0] || id === row[0].replace("minecraft:", "") || id === row[1]) return row[1];
   }
   return id;
@@ -173,7 +178,7 @@ function textOptions(items: string[]): SelectOption[] {
     <label>选中效果组内容</label>
     <div class="inline-row">
       <span class="field-label">状态效果<InfoTip text="输入中文、英文 ID 或关键词后按 Tab 补全；候选项会显示效果 ID。" /></span>
-      <CatalogCombo v-model="effect" :catalog="EFFECTS" explain placeholder="状态效果或 ID" />
+      <CatalogCombo v-model="effect" :catalog="effectCatalog" explain placeholder="状态效果或 ID" />
       <span class="field-label">持续时间<InfoTip text="效果持续 tick 数。20 tick 约等于 1 秒。" /></span>
       <NumberInput v-model="duration" :min="0" />
       <span class="field-label">等级<InfoTip text="效果强度等级，游戏内通常显示为等级 + 1。" /></span>
