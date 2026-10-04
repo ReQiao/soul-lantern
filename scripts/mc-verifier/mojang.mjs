@@ -14,7 +14,7 @@ const MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2
 let manifestCache = null;
 
 async function fetchJson(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "give-command-generator-verifier" } });
+  const res = await fetch(url, { headers: { "User-Agent": "give-command-generator-verifier" }, signal: AbortSignal.timeout(120000) });
   if (!res.ok) throw new Error(`请求失败 ${res.status} ${res.statusText}: ${url}`);
   return res.json();
 }
@@ -82,7 +82,7 @@ export async function ensureServerJar(version, cacheDir, log = () => {}) {
   }
 
   log(`  下载 server.jar ${(size / 1048576).toFixed(1)}MB ...`);
-  const res = await fetch(url, { headers: { "User-Agent": "give-command-generator-verifier" } });
+  const res = await fetch(url, { headers: { "User-Agent": "give-command-generator-verifier" }, signal: AbortSignal.timeout(120000) });
   if (!res.ok || !res.body) throw new Error(`下载失败 ${res.status}: ${url}`);
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(jarPath));
 

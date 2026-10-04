@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { filterExperimentalCatalog } from "./filter-experimental-catalog.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const versions = [
@@ -37,4 +38,5 @@ for (const [key, version] of versions) {
 }
 writeFileSync(path.join(root, "src/data/catalog-versions.generated.json"), JSON.stringify(catalogs));
 writeFileSync(path.join(root, "src/data/items.generated.ts"), readFileSync(path.join(scratch, "26.3.ts")));
+await filterExperimentalCatalog(path.join(root, "src/data/catalog-versions.generated.json"), process.env.SOUL_LANTERN_MC_CACHE || path.join(root, "scripts/mc-verifier/cache"));
 console.log("已更新各版本目录和 26.3 最新目录");
