@@ -29,14 +29,15 @@ for (const [version, commands] of Object.entries(fixtures)) {
     console.log(version, '加载临时区块:', load);
     if (packMetadata[version]) {
       const response = await rcon.send('function sl_verify:run');
-      const okay = /sl_pack_loaded|Executed.*command/.test(response) && !/Unknown|<--\[HERE\]/.test(response);
+      const okay = (/sl_pack_loaded|Executed.*command/.test(response) || server.logTail.some(line => /\[Rcon\].*sl_pack_loaded/.test(line))) && !/Unknown|<--\[HERE\]/.test(response);
       results.push({kind:'client_datapack_load',response,okay});
       if (!okay) failures++;
     }
 
     const modern = !/^1\.(20|21\.[1-4]$)/.test(version) && version !== '1.21';
     const equipment = modern ? 'equipment:{mainhand:{id:"minecraft:diamond_sword",count:1}}' : 'HandItems:[{id:"minecraft:diamond_sword",count:1},{}]';
-    await rcon.send(`summon zombie 0 100 0 {NoAI:1b,NoGravity:1b,Invulnerable:1b,Tags:["sl_verify"],${equipment}}`);
+    const setup = await rcon.send(`summon zombie 0 100 0 {NoAI:1b,NoGravity:1b,Invulnerable:1b,Tags:["sl_verify"],${equipment}}`);
+    if (!/Summoned/.test(setup)) throw new Error(`测试实体创建失败：${setup}`);
     for (const {kind, command} of commands) {
       const logBefore = server.logTail.join('\n');
       const response = await rcon.send(command.replace(/^\//, ''));
