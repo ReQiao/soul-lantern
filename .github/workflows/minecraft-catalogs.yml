@@ -1,0 +1,27 @@
+name: Minecraft 官方版本目录
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: node scripts/gen-version-catalogs.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: minecraft-official-catalogs
+          path: |
+            src/data/catalog-versions.generated.json
+            src/data/items.generated.ts
+          if-no-files-found: error
+          retention-days: 14
