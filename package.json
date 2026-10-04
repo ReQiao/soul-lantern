@@ -11,7 +11,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "tsx src/logic/builder.test.mjs && tsx src/logic/glass.test.mjs && tsx src/logic/markdown.test.mjs",
+    "test": "tsx src/logic/builder.test.mjs && tsx src/logic/glass.test.mjs && tsx src/logic/markdown.test.mjs && tsx src/logic/catalogs.test.mjs",
     "verify-syntax": "node scripts/mc-verifier/index.mjs"
   },
   "dependencies": {

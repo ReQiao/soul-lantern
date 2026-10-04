@@ -554,9 +554,10 @@ export const VERSIONS = [
     "java_26_1"
   ],
   [
-    "Java 26.2+",
+    "Java 26.2",
     "java_26_2_plus"
   ],
+  ["Java 26.3", "java_26_3_plus"],
   [
     "基岩版",
     "bedrock"

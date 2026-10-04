@@ -40,14 +40,8 @@ import {
   refreshAuth,
 } from "./logic/auth";
 import {
-  ATTRIBUTES,
-  BEDROCK_BLOCKS,
-  BEDROCK_ITEMS,
-  BLOCKS,
   CORRECT_FOR_DROPS,
-  ENCHANTS,
   ITEM_LOCK_MODES,
-  ITEMS,
   LIMIT_TYPES,
   OPERATIONS,
   RARITIES,
@@ -75,6 +69,7 @@ import {
   type GiveForm,
   type ToolRuleRow,
 } from "./logic/builder";
+import { getItemCatalog, getBlockCatalog, getEnchantmentCatalog, getAttributeCatalog, unsupportedItemMessage } from "./logic/catalogs";
 import "./style.css";
 
 interface SelectOption {
@@ -428,9 +423,10 @@ const visibleTabs = computed(() => {
  * 注意"食物工具"页的 toolBlock 不走这里——tool 组件是 Java 1.20.5+ 独有的，
  * 基岩版的 give 根本不输出它（见 buildBedrock），那边继续用 Java 方块表是对的。
  */
-const bedrockMode = computed(() => form.version === "bedrock");
-const itemCatalog = computed(() => (bedrockMode.value ? BEDROCK_ITEMS : ITEMS));
-const blockCatalog = computed(() => (bedrockMode.value ? BEDROCK_BLOCKS : BLOCKS));
+const itemCatalog = computed(() => getItemCatalog(form.version));
+const enchantCatalog = computed(() => getEnchantmentCatalog(form.version));
+const attributeCatalog = computed(() => getAttributeCatalog(form.version));
+const blockCatalog = computed(() => getBlockCatalog(form.version));
 const filteredBlocks = computed(() =>
   blockCatalog.value.filter((row) => matches(row, blockSearch.value)),
 );
@@ -523,6 +519,8 @@ watch(
       foodToolTab.value = "食物消耗";
     }
     status.value = form.version === "bedrock" ? "状态：基岩版模式" : `状态：${pairText(VERSIONS, form.version)} 模式`;
+    const itemWarning = unsupportedItemMessage(form.version, form.item);
+    if (itemWarning) showToast(itemWarning);
     refreshPreviewIfGenerated();
   },
 );
@@ -744,7 +742,7 @@ function addBlock() {
 
 function addToolRule() {
   const row: ToolRuleRow = {
-    blocks: [mapCatalog(BLOCKS, toolBlock.value)],
+    blocks: [mapCatalog(blockCatalog.value, toolBlock.value)],
     speed: fmtNumber(toolRuleSpeed.value),
     correct_for_drops: toolCorrect.value,
   };
@@ -1407,7 +1405,7 @@ function textOptions(items: string[]): SelectOption[] {
             <div v-else-if="activeTab === '附魔'" class="table-tab">
               <div class="inline-row">
                 <span class="field-label">附魔<InfoTip text="输入中文、英文 ID 或缩写后按 Tab 补全；悬浮候选项可看到通俗说明。" /></span>
-                <CatalogCombo v-model="enchantText" :catalog="ENCHANTS" explain placeholder="输入 耐 / unb / minecraft:unb" />
+                <CatalogCombo v-model="enchantText" :catalog="enchantCatalog" explain placeholder="输入 耐 / unb / minecraft:unb" />
                 <span class="field-label">等级<InfoTip text="附魔等级，允许高于原版常规上限，用于生成高等级物品。" /></span>
                 <NumberInput v-model="enchantLevel" :min="1" />
                 <button type="button" @click="addEnchant">添加</button>
@@ -1433,7 +1431,7 @@ function textOptions(items: string[]): SelectOption[] {
             <div v-else-if="activeTab === '属性'" class="table-tab">
               <div class="inline-row attr-row">
                 <span class="field-label">属性<InfoTip text="属性修饰符会改变物品持有或装备时的能力；悬浮候选项可查看作用解释。" /></span>
-                <CatalogCombo v-model="attrText" :catalog="ATTRIBUTES" explain placeholder="属性名或 ID" />
+                <CatalogCombo v-model="attrText" :catalog="attributeCatalog" explain placeholder="属性名或 ID" />
                 <span class="field-label">数值<InfoTip text="属性增减的数值。过大可能导致游戏内效果异常，请按用途调整。" /></span>
                 <NumberInput v-model="attrAmount" :step="0.0001" />
                 <span class="field-label">槽位<InfoTip text="限制属性在哪个装备槽或手持槽生效。任意表示不限制。" /></span>
@@ -1552,7 +1550,7 @@ function textOptions(items: string[]): SelectOption[] {
                 </div>
                 <div class="inline-row">
                   <span class="field-label">方块<InfoTip text="这条工具规则匹配的方块，可输入多个时用逗号分隔。" /></span>
-                  <CatalogCombo v-model="toolBlock" :catalog="BLOCKS" placeholder="方块名或 ID" />
+                  <CatalogCombo v-model="toolBlock" :catalog="blockCatalog" placeholder="方块名或 ID" />
                   <span class="field-label">速度<InfoTip text="匹配这些方块时的挖掘速度。" /></span>
                   <NumberInput v-model="toolRuleSpeed" :min="0" :step="0.001" />
                   <span class="field-label">正确掉落<InfoTip text="控制该工具是否被视为能正确掉落该方块。" /></span>

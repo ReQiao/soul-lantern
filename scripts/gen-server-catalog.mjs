@@ -102,4 +102,9 @@ writeFileSync(outPath, out, "utf8");
 for (const [name, rows] of tables) {
   console.log(`${name}: ${rows.length} 条`);
 }
-console.log(`写入 ${outPath}`);
+const versions = JSON.parse(readFileSync(path.join(root, "src/data/catalog-versions.generated.json"), "utf8"));
+for (const value of Object.values(versions)) {
+  for (const key of ["items", "blocks", "entities", "particles"]) value[key] = value[key].map(row => row.slice(0, 2));
+}
+writeFileSync(path.join(outDir, "catalog_versions.json"), JSON.stringify(versions));
+console.log(`写入 ${outPath} 和分版本目录`);

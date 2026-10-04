@@ -343,13 +343,13 @@ function base(version) {
   expect("1.21.2 lore SNBT string array", cmd.includes("lore=['"), true);
 }
 
-// --- 19. Java 1.21.2 enchantments flat, no levels wrapper (server-verified) ---
+// --- 19. Java 1.21.2 enchantments wrapped, no levels wrapper (server-verified) ---
 {
   const f = base("java_1_21_2");
   f.enchantments = [{ id: "minecraft:unbreaking", level: 3 }];
   const cmd = buildGiveCommand(f);
-  expect("1.21.2 enchantments flat", cmd.includes("enchantments={unbreaking:3}"), true);
-  expect("1.21.2 enchantments no levels wrapper", !cmd.includes("levels"), true);
+  expect("1.21.2 enchantments wrapped", cmd.includes("enchantments={levels:{unbreaking:3}}"), true);
+  expect("1.21.2 enchantments levels wrapper", cmd.includes("levels"), true);
 }
 
 // --- 20. Java 1.21.2 attribute uses modern array, stripped unquoted type (server-verified) ---
@@ -357,8 +357,8 @@ function base(version) {
   const f = base("java_1_21_2");
   f.attributes = [{ type: "armor", amount: 2, slot: "any", operation: "add_value", id: "x" }];
   const cmd = buildGiveCommand(f);
-  expect("1.21.2 attribute_modifiers direct array", cmd.includes("attribute_modifiers=[{type:armor"), true);
-  expect("1.21.2 attribute no modifiers wrapper", !cmd.includes("modifiers:["), true);
+  expect("1.21.2 attribute_modifiers wrapped array", cmd.includes("attribute_modifiers={modifiers:[{type:armor"), true);
+  expect("1.21.2 attribute has modifiers wrapper", cmd.includes("modifiers:["), true);
   expect("1.21.2 attribute id quoted", cmd.includes('id:"x"'), true);
 }
 
@@ -509,12 +509,12 @@ function base(version) {
   expect("1.20.5 no tooltip_display", !cmd.includes("tooltip_display"), true);
 }
 
-// --- 35. Java 1.20.5 enchantments flat format ---
+// --- 35. Java 1.20.5 enchantments wrapped format ---
 {
   const f = base("java_1_20_5");
   f.enchantments = [{ id: "minecraft:unbreaking", level: 3 }];
   const cmd = buildGiveCommand(f);
-  expect("1.20.5 enchantments flat", cmd.includes("enchantments={unbreaking:3}"), true);
+  expect("1.20.5 enchantments wrapped", cmd.includes("enchantments={levels:{unbreaking:3}}"), true);
 }
 
 // --- 36. font emitted (modern) ---
@@ -690,8 +690,8 @@ console.log("\n[detectGiveVersionFromRaw]");
   expect("1.21.20 更高补丁号也归到 11_plus", detectGiveVersionFromRaw("1.21.20"), "java_1_21_11_plus");
   expect("26.1 新计年法", detectGiveVersionFromRaw("26.1"), "java_26_1");
   expect("26.2 新计年法", detectGiveVersionFromRaw("26.2"), "java_26_2_plus");
-  expect("26.3 落在 26.2+ 档", detectGiveVersionFromRaw("26.3"), "java_26_2_plus");
-  expect("27.0 更新的年份沿用最新分档", detectGiveVersionFromRaw("27.0"), "java_26_2_plus");
+  expect("26.3 独立档", detectGiveVersionFromRaw("26.3"), "java_26_3_plus");
+  expect("27.0 更新的年份沿用最新分档", detectGiveVersionFromRaw("27.0"), "java_26_3_plus");
   expect("空字符串识别不出", detectGiveVersionFromRaw(""), null);
   expect("乱写的字符串识别不出", detectGiveVersionFromRaw("not-a-version"), null);
   expect("1.19 太老，识别不出", detectGiveVersionFromRaw("1.19"), null);

@@ -292,10 +292,31 @@ fn pack_format_for_version(version: &str) -> i32 {
         "java_1_21_5" => 71,
         "java_1_21_6" => 80,
         "java_1_21_9" => 88,
-        "java_26_1" => 99,
+        "java_1_21_11_plus" => 94,
+        "java_26_1" => 101,
+        "java_26_3_plus" => 121,
         _ => 107, // 26.2+（实测值）
     }
 }
+
+fn pack_metadata(version: &str) -> serde_json::Value {
+    let format = pack_format_for_version(version);
+    if format >= 82 {
+        let minor = if matches!(version, "java_1_21_11_plus" | "java_26_1" | "java_26_2_plus") { 1 } else { 0 };
+        serde_json::json!({"pack": {
+            "pack_format": format,
+            "description": "Soul Lantern 生成的指令",
+            "min_format": [format, minor], "max_format": format
+        }})
+    } else {
+        serde_json::json!({"pack": {
+            "pack_format": format,
+            "description": "Soul Lantern 生成的指令",
+            "supported_formats": format
+        }})
+    }
+}
+
 
 /// 命令存进 .mcfunction 时不能带前导斜杠。空行与注释行原样保留。
 fn clean_commands(commands: &[String]) -> Vec<String> {
@@ -349,16 +370,7 @@ pub fn datapack_deploy(
         fs::create_dir_all(dir).map_err(|e| format!("创建 datapack 目录失败：{e}"))?;
     }
 
-    let format = pack_format_for_version(&version);
-    let meta = serde_json::json!({
-        "pack": {
-            "pack_format": format,
-            "description": "Soul Lantern 生成的指令",
-            // 官方字段（1.20.2+）：声明兼容区间，避免 pack_format 与玩家版本
-            // 差一点就整个加载不了。
-            "supported_formats": { "min_inclusive": 41, "max_inclusive": 9999 }
-        }
-    });
+    let meta = pack_metadata(&version);
     fs::write(pack_dir.join("pack.mcmeta"), serde_json::to_vec_pretty(&meta).unwrap_or_default())
         .map_err(|e| format!("写入 pack.mcmeta 失败：{e}"))?;
 
@@ -496,7 +508,8 @@ mod tests {
         let meta: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(pack.join("pack.mcmeta")).unwrap()).unwrap();
         assert_eq!(meta["pack"]["pack_format"], 107);
-        assert_eq!(meta["pack"]["supported_formats"]["min_inclusive"], 41);
+        assert_eq!(meta["pack"]["min_format"], serde_json::json!([107, 1]));
+        assert!(meta["pack"].get("supported_formats").is_none());
 
         // 前导斜杠必须去掉，否则游戏加载 function 时会报错
         let body = fs::read_to_string(pack.join("data/soul_lantern/function/run.mcfunction")).unwrap();
@@ -513,6 +526,9 @@ mod tests {
         assert_eq!(pack_format_for_version("java_1_20_5"), 41);
         assert_eq!(pack_format_for_version("java_1_21_4"), 61);
         assert_eq!(pack_format_for_version("java_26_2_plus"), 107);
+        assert_eq!(pack_format_for_version("java_26_3_plus"), 121);
+        assert_eq!(pack_metadata("java_26_3_plus")["pack"]["min_format"], serde_json::json!([121, 0]));
+        assert_eq!(pack_metadata("java_1_20_5")["pack"]["supported_formats"], 41);
     }
 
     #[test]

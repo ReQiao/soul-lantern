@@ -36,6 +36,14 @@ for (const [version, commands] of Object.entries(fixtures)) {
     const okay = /40(?:\.0)?/.test(response) && !/<--\[HERE\]/.test(response);
     results.push({kind:'summon_health_readback',response,okay});
     if (!okay) failures++;
+    const name = await rcon.send('data get entity @e[tag=sl_summon,limit=1] CustomName');
+    const nameOkay = /验证/.test(name) && (!modern || /(?:text:|"text":)/.test(name));
+    results.push({kind:'entity_name_readback',response:name,okay:nameOkay});
+    if (!nameOkay) failures++;
+    const sign = await rcon.send('data get block 6 100 0 front_text.messages[0]');
+    const signOkay = /验证/.test(sign) && (!modern || /(?:text:|"text":)/.test(sign));
+    results.push({kind:'sign_text_readback',response:sign,okay:signOkay});
+    if (!signOkay) failures++;
     const slot = modern ? 'equipment.mainhand' : 'HandItems[0]';
     const enchant = await rcon.send(`data get entity @e[tag=sl_summon,limit=1] ${slot}.components."minecraft:enchantments"`);
     const enchantOkay = /sharpness/.test(enchant) && /3/.test(enchant) && !/No elements|<--\[HERE\]/.test(enchant);

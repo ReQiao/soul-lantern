@@ -1,38 +1,25 @@
-/**
- * AI 提示词构建（纯前端 TS）。
- *
- * 分工：
- *   - AI 只产出结构化「指令意图」，不拼写最终命令字符串——语法一律由服务器上
- *     经 mc-verifier 实证的确定性构建器生成（server/src/give/）。这样 AI 的
- *     幻觉只会影响"做什么"，不会产出语法非法的命令。
- *   - 附魔 / 药水效果的完整 id 表由 catalog 动态注入，避免 AI 编造不存在的 id。
- *   - 联网（注入 API key、POST 到大模型）、解析 AI 响应 JSON、目录校验、
- *     指令构建，全部由服务器负责（server/src/give/parse.rs、dispatch.rs、
- *     builder.rs、commands/*）；本模块只负责"请求前构造提示词"这一半——
- *     提示词本身是自然语言文本，不是确定性逻辑，没有安全/正确性问题，
- *     留在客户端还能不经服务器发布就调整措辞。
- */
+// AI 输出结构化意图，服务端按版本构建指令；自由文本片段仍需游戏实测。
 
-import { EFFECTS, ENCHANTS, ENTITIES, GENERATED_MC_VERSION, PARTICLES } from "../../data/catalog";
-import type { GiveVersion } from "../builder";
+import { isModernNbtFamily, type GiveVersion } from "../builder";
+import { getVersionCatalog, getEntityCatalog, getParticleCatalog, getEnchantmentCatalog, getEffectCatalog } from "../catalogs";
 
 function toRoman(n: number): string {
   return ["", "I", "II", "III", "IV", "V"][n] ?? String(n);
 }
 
 /** 从 catalog 动态生成附魔 / 药水效果参考表，注入系统提示。 */
-function buildCatalogRef(): string {
-  const enchantLines = (ENCHANTS as readonly (readonly [string, string, number, string])[])
+function buildCatalogRef(version: GiveVersion): string {
+  const enchantLines = (getEnchantmentCatalog(version) as readonly (readonly [string, string, number, string])[])
     .map(([id, zh, maxLv]) => `  ${id}（${zh}，最高${toRoman(maxLv)}级）`)
     .join("\n");
-  const effectIds = (EFFECTS as readonly (readonly [string, string, ...unknown[]])[])
+  const effectIds = (getEffectCatalog(version) as readonly (readonly [string, string, ...unknown[]])[])
     .map(([id, zh]) => `${id}(${zh})`)
     .join(" ");
-  const entityIds = (ENTITIES as readonly (readonly [string, string, ...unknown[]])[])
+  const entityIds = (getEntityCatalog(version) as readonly (readonly [string, string, ...unknown[]])[])
     .map(([id, zh]) => `${id}(${zh})`)
     .join(" ");
   // 粒子没有官方中文译名（语言文件里没有 particle.minecraft.* 这族键），只列 id
-  const particleIds = (PARTICLES as readonly (readonly [string, ...unknown[]])[])
+  const particleIds = (getParticleCatalog(version) as readonly (readonly [string, ...unknown[]])[])
     .map(([id]) => id)
     .join(" ");
   return `附魔完整列表（give 的 enchantments[].id / enchant 的 enchantment 必须取自这里）：
@@ -51,7 +38,7 @@ ${particleIds}`;
 }
 
 /** 支持的指令清单——同时作为给 AI 的 schema 说明。 */
-function buildSupportedCommands(): string {
+function buildSupportedCommands(version: GiveVersion): string {
   return `
 你只能产出以下 command 类型的意图。选择器：@s=自己 @a=所有玩家 @p=最近玩家 @r=随机玩家 @e=所有实体。
 
@@ -94,7 +81,7 @@ execute 的 loop 字段：这条命令需要"每 tick 持续侦测"（不是执�
 命令方块。绝大多数"侦测式"组合技（见下面 mechanics guide）都要标 loop:true。
 一个需求可以拆成多条意图，按执行顺序排列。
 
-${buildCatalogRef()}`;
+${buildCatalogRef(version)}`;
 }
 
 /**
@@ -104,8 +91,8 @@ ${buildCatalogRef()}`;
  * 下面的 NBT 键名与选择器写法全部经 scripts/mc-verifier 在真实服务器上实测
  * （见 results/26.2/semantic.json 的 K 组探针），不是凭印象写的。
  */
-function buildMechanicsGuide(): string {
-  return `
+function buildMechanicsGuide(version: GiveVersion): string {
+  let guide = `
 【核心原则：先推理游戏机制，再生成命令】
 你是精通 Minecraft 机制的专家，不是查表器。面对一个需求，按以下顺序思考：
 1. 用户真正想要的「游戏内效果」是什么？（不是字面物品，是体验）
@@ -257,6 +244,28 @@ scoreboard objectives add 的 criteria 不是只能填 dummy，Minecraft 内置�
 execute 的 run 字段可以写任意原版命令（summon/kill/setblock/data/tp/give...），
 这是组合机制的关键。需要"实时侦测某条件→执行"时，就用 execute 链 + loop:true（见上）。
 凡是有使用前提的（如需雷暴天气、需 OP 权限、锥形判定是近似值），务必写进 explanation。`;
+  if (!isModernNbtFamily(version)) {
+    const start = guide.indexOf("【实体落地检测");
+    const end = guide.indexOf("【设置生物血量");
+    guide = guide.slice(0, start) + "旧版本不要使用 1.21.5 才加入的实体 data 标记机制。需要区分实体时优先通过结构化 summon 意图设置 tags。\n" + guide.slice(end);
+  }
+  if (version === "java_26_3_plus") guide = guide.replace('block_state:{Name:', 'block_state:{id:');
+  return guide;
+
+}
+
+function buildVersionRules(version: GiveVersion): string {
+  const oldIds = ["java_1_20_5", "java_1_21", "java_1_21_1"].includes(version);
+  const modern = isModernNbtFamily(version);
+  return [
+    "【目标版本规则：execute.run / subcommands / 原始 NBT 也必须遵守】",
+    "优先使用结构化意图；把整条 give/summon/attribute 拼进 execute.run 会绕过构建器的版本转换。",
+    oldIds ? "属性 ID 保留 generic./player./zombie. 类别前缀。" : "属性 ID 不带 generic./player./zombie. 前缀。",
+    modern ? "实体属性使用 attributes:[{id,base}]，装备使用 equipment:{mainhand,...}，文本使用原生 SNBT 组件。" : "实体属性使用 Attributes:[{Name,Base}]，装备使用 HandItems/ArmorItems，富文本写为 JSON 字符串。",
+    modern ? "附魔组件直接使用 {sharpness:3}。" : "附魔组件使用 {levels:{sharpness:3}}。",
+    version === "java_26_3_plus" ? "BlockState 复合字段改为 id 和 properties，包括方块粒子的 block_state。" : "BlockState 复合字段使用 Name 和 Properties。",
+    "只能使用目标版本实际存在的物品、实体、粒子和机制，不能把新版本内容带入旧版本。",
+  ].join("\n");
 }
 
 /** 构造发给 AI 的系统提示词。 */
@@ -264,9 +273,10 @@ export function buildSystemPrompt(version: GiveVersion): string {
   return [
     "你是精通 Minecraft 游戏机制的指令专家。理解用户想要的游戏内效果，",
     "推理出用原版机制实现它的方案，再拆解成一组结构化指令意图。",
-    `目标版本: ${version}（物品/方块表基于 Minecraft ${GENERATED_MC_VERSION} 官方数据生成）。`,
-    buildMechanicsGuide(),
-    buildSupportedCommands(),
+    `目标版本: ${version}（物品/方块表基于 Minecraft ${getVersionCatalog(version).minecraftVersion} 官方数据生成）。`,
+    buildVersionRules(version),
+    buildMechanicsGuide(version),
+    buildSupportedCommands(version),
     "",
     "只输出 JSON 对象，形如：",
     '{ "intents": [' +

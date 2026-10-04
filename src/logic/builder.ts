@@ -2,11 +2,9 @@ import {
   ATTRIBUTES,
   BEDROCK_BLOCKS,
   BEDROCK_ITEMS,
-  BLOCKS,
   CORRECT_FOR_DROPS,
   ENCHANTS,
   ITEM_LOCK_MODES,
-  ITEMS,
   LIMIT_TYPES,
   OPERATIONS,
   RARITIES,
@@ -14,6 +12,8 @@ import {
   type CatalogRow,
   type PairRow,
 } from "../data/catalog";
+
+import { getItemCatalog, getAttributeCatalog, getBlockCatalog, unsupportedItemMessage } from "./catalogs";
 
 export type GiveVersion =
   | "java_1_20_5"
@@ -28,6 +28,7 @@ export type GiveVersion =
   | "java_1_21_11_plus"
   | "java_26_1"
   | "java_26_2_plus"
+  | "java_26_3_plus"
   | "bedrock";
 
 // ---------------- 文本组件模型 ----------------
@@ -412,6 +413,8 @@ const JAVA_1_20_5_PROFILE: ModernProfile = {
 };
 
 export function buildGiveCommand(form: GiveForm, warnings: string[] = []): string {
+  const itemWarning = unsupportedItemMessage(form.version, form.item);
+  if (itemWarning) throw new Error(itemWarning);
   if (form.version === "bedrock") {
     return buildBedrock(form);
   }
@@ -457,14 +460,17 @@ function buildModernFamily(form: GiveForm, profile: ModernProfile, warnings: str
   const enchants = form.enchantments
     .filter((row) => String(row.id ?? "").trim())
     .map((row) => `${componentId(mapCatalog(ENCHANTS, row.id))}:${normalizeInt(row.level, 1, 1)}`);
-  if (enchants.length) add("enchantments", `{${enchants.join(",")}}`);
+  if (enchants.length) {
+    const value = `{${enchants.join(",")}}`;
+    add("enchantments", versionAtLeast(form.version, "java_1_21_5") ? value : `{levels:${value}}`);
+  }
 
   if (profile.supportsAttributeModifiers) {
     const attributes = form.attributes
       .filter((row) => String(row.type ?? "").trim())
       .map((row) => {
         const fields = [
-          `type:${componentId(mapCatalog(ATTRIBUTES, row.type))}`,
+          `type:${componentId(mapCatalog(getAttributeCatalog(form.version), row.type))}`,
           `amount:${fmtNumber(row.amount)}`,
         ];
         const slot = pairValue(SLOTS, row.slot || "任意");
@@ -473,13 +479,16 @@ function buildModernFamily(form: GiveForm, profile: ModernProfile, warnings: str
         fields.push(`operation:${pairValue(OPERATIONS, row.operation || "加算")}`);
         return `{${fields.join(",")}}`;
       });
-    if (attributes.length) add("attribute_modifiers", `[${attributes.join(",")}]`);
+    if (attributes.length) {
+      const value = `[${attributes.join(",")}]`;
+      add("attribute_modifiers", versionAtLeast(form.version, "java_1_21_5") ? value : `{modifiers:${value}}`);
+    }
   }
 
   const place = form.blockLimits.filter((row) => ["place", "both"].includes(pairValue(LIMIT_TYPES, row.type)));
   const brk = form.blockLimits.filter((row) => ["break", "both"].includes(pairValue(LIMIT_TYPES, row.type)));
-  const placePredicates = blockPredicateList(place);
-  const breakPredicates = blockPredicateList(brk);
+  const placePredicates = blockPredicateList(place, form.version);
+  const breakPredicates = blockPredicateList(brk, form.version);
   const wrapPredicates = (preds: string[]) =>
     profile.adventurePredicateWrapper ? `{predicates:[${preds.join(",")}]}` : `[${preds.join(",")}]`;
   if (placePredicates.length) add("can_place_on", wrapPredicates(placePredicates));
@@ -531,7 +540,7 @@ function buildModernFamily(form: GiveForm, profile: ModernProfile, warnings: str
     }
   }
 
-  const toolRules = buildToolRules(form.toolRules);
+  const toolRules = buildToolRules(form.toolRules, form.version);
   if (form.toolEnabled || toolRules) {
     const fields: string[] = [];
     if (form.toolEnabled) {
@@ -544,7 +553,7 @@ function buildModernFamily(form: GiveForm, profile: ModernProfile, warnings: str
 
   const body = parts.length ? `[${parts.join(",")}]` : "";
   const slash = form.withSlash ? "/" : "";
-  return `${slash}give ${normalizeTarget(form.target)} ${mapCatalog(ITEMS, form.item)}${body} ${normalizeInt(form.count, 1, 1)}`;
+  return `${slash}give ${normalizeTarget(form.target)} ${mapCatalog(getItemCatalog(form.version), form.item)}${body} ${normalizeInt(form.count, 1, 1)}`;
 }
 
 function buildJava121Legacy(form: GiveForm, warnings: string[] = []): string {
@@ -585,8 +594,8 @@ function buildJava121Legacy(form: GiveForm, warnings: string[] = []): string {
 
   const place = form.blockLimits.filter((row) => ["place", "both"].includes(pairValue(LIMIT_TYPES, row.type)));
   const brk = form.blockLimits.filter((row) => ["break", "both"].includes(pairValue(LIMIT_TYPES, row.type)));
-  const placePredicates = blockPredicateList(place);
-  const breakPredicates = blockPredicateList(brk);
+  const placePredicates = blockPredicateList(place, form.version);
+  const breakPredicates = blockPredicateList(brk, form.version);
   if (placePredicates.length) add("can_place_on", `{predicates:[${placePredicates.join(",")}]}`);
   if (breakPredicates.length) add("can_break", `{predicates:[${breakPredicates.join(",")}]}`);
 
@@ -601,7 +610,7 @@ function buildJava121Legacy(form: GiveForm, warnings: string[] = []): string {
   const legacyFood = buildJava121Food(form);
   if (legacyFood) add("food", legacyFood);
 
-  const toolRules = buildToolRules(form.toolRules);
+  const toolRules = buildToolRules(form.toolRules, form.version);
   if (form.toolEnabled || toolRules) {
     const fields: string[] = [];
     if (form.toolEnabled) {
@@ -614,7 +623,7 @@ function buildJava121Legacy(form: GiveForm, warnings: string[] = []): string {
 
   const body = parts.length ? `[${parts.join(",")}]` : "";
   const slash = form.withSlash ? "/" : "";
-  return `${slash}give ${normalizeTarget(form.target)} ${mapCatalog(ITEMS, form.item)}${body} ${normalizeInt(form.count, 1, 1)}`;
+  return `${slash}give ${normalizeTarget(form.target)} ${mapCatalog(getItemCatalog(form.version), form.item)}${body} ${normalizeInt(form.count, 1, 1)}`;
 }
 
 /**
@@ -713,11 +722,11 @@ function buildEffectGroups(groups: EffectGroup[]): string {
   return out.join(",");
 }
 
-function buildToolRules(rules: ToolRuleRow[]): string {
+function buildToolRules(rules: ToolRuleRow[], version: GiveVersion): string {
   const out: string[] = [];
   for (const rule of rules || []) {
     const rawBlocks = Array.isArray(rule.blocks) ? rule.blocks : splitCsv(rule.blocks);
-    const blocks = rawBlocks.map((block) => componentId(mapCatalog(BLOCKS, block))).filter(Boolean);
+    const blocks = rawBlocks.map((block) => componentId(mapCatalog(getBlockCatalog(version), block))).filter(Boolean);
     if (!blocks.length) continue;
     const fields = [`blocks:[${blocks.join(",")}]`];
     if (String(rule.speed ?? "").trim()) fields.push(`speed:${fmtNumber(rule.speed)}f`);
@@ -729,10 +738,10 @@ function buildToolRules(rules: ToolRuleRow[]): string {
   return out.join(",");
 }
 
-function blockPredicateList(rows: BlockLimitRow[]): string[] {
+function blockPredicateList(rows: BlockLimitRow[], version: GiveVersion): string[] {
   return rows
     .filter((row) => String(row.block ?? "").trim())
-    .map((row) => `{blocks:${quote(mapCatalog(BLOCKS, row.block))}}`);
+    .map((row) => `{blocks:${quote(mapCatalog(getBlockCatalog(version), row.block))}}`);
 }
 
 export function compact(value: unknown): string {
@@ -757,6 +766,7 @@ const JAVA_VERSION_ORDER: GiveVersion[] = [
   "java_1_21_11_plus",
   "java_26_1",
   "java_26_2_plus",
+  "java_26_3_plus",
 ];
 
 function versionAtLeast(version: GiveVersion, min: GiveVersion): boolean {
@@ -1135,6 +1145,7 @@ function normalizeVersion(value: unknown): GiveVersion {
     text === "java_1_21_11_plus" ||
     text === "java_26_1" ||
     text === "java_26_2_plus" ||
+    text === "java_26_3_plus" ||
     text === "bedrock"
   ) {
     return text;
@@ -1193,8 +1204,9 @@ export function detectGiveVersionFromRaw(raw: string): GiveVersion | null {
   if (parts[0] >= 2) {
     const [major, minor = 0] = parts;
     if (major === 26 && minor === 1) return "java_26_1";
-    if (major >= 26 && minor >= 2) return "java_26_2_plus";
-    if (major > 26) return "java_26_2_plus"; // 更新的年份先沿用最新分档
+    if (major === 26 && minor === 2) return "java_26_2_plus";
+    if (major === 26 && minor >= 3) return "java_26_3_plus";
+    if (major > 26) return "java_26_3_plus"; // 更新的年份先沿用最新分档
     return null;
   }
 
