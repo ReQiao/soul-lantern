@@ -1,7 +1,7 @@
 // AI 输出结构化意图，服务端按版本构建指令；自由文本片段仍需游戏实测。
 
 import { isModernNbtFamily, type GiveVersion } from "../builder";
-import { getVersionCatalog, getEntityCatalog, getParticleCatalog, getEnchantmentCatalog, getEffectCatalog } from "../catalogs";
+import { getVersionCatalog, getEntityCatalog, getParticleCatalog, getEnchantmentCatalog, getEffectCatalog, getAttributeCatalog } from "../catalogs";
 
 function toRoman(n: number): string {
   return ["", "I", "II", "III", "IV", "V"][n] ?? String(n);
@@ -15,6 +15,7 @@ function buildCatalogRef(version: GiveVersion): string {
   const effectIds = (getEffectCatalog(version) as readonly (readonly [string, string, ...unknown[]])[])
     .map(([id, zh]) => `${id}(${zh})`)
     .join(" ");
+  const attributeIds = getAttributeCatalog(version).map(([id, zh]) => `${id}(${zh})`).join(" ");
   const entityIds = (getEntityCatalog(version) as readonly (readonly [string, string, ...unknown[]])[])
     .map(([id, zh]) => `${id}(${zh})`)
     .join(" ");
@@ -27,6 +28,9 @@ ${enchantLines}
 
 药水效果完整列表（effect_give 的 effect 字段必须取自这里）：
 ${effectIds}
+
+属性完整列表（attribute.attribute / summon.attributes[].id 必须取自这里）：
+${attributeIds}
 
 实体类型完整列表（summon 的 entityType 必须取自这里，本地会校验，编造的一律构建失败）：
 ${entityIds}
@@ -265,6 +269,7 @@ function buildVersionRules(version: GiveVersion): string {
     modern ? "装备使用 equipment:{mainhand,...}，文本使用原生 SNBT 组件。" : "装备使用 HandItems/ArmorItems，富文本写为 JSON 字符串。",
     modern ? "附魔组件直接使用 {sharpness:3}。" : "附魔组件使用 {levels:{sharpness:3}}。",
     version === "java_26_3_plus" ? "BlockState 复合字段改为 id 和 properties，包括方块粒子的 block_state。" : "BlockState 复合字段使用 Name 和 Properties。",
+    version === "java_1_20_5" ? "attribute 的 modifier_add / modifier_remove / modifier_value_get 使用标准 UUID（8-4-4-4-12 十六进制格式），modifier_add 还需要 name。" : "attribute 修改器使用资源 ID，例如 minecraft:my_buff，不需要单独 name。",
     "只能使用目标版本实际存在的物品、实体、粒子和机制，不能把新版本内容带入旧版本。",
   ].join("\n");
 }
