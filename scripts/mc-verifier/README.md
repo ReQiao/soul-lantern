@@ -1,106 +1,58 @@
-# MC give 语法自动验证器
+# Minecraft 指令验证工具
 
-用真实 Minecraft 官方服务器自动验证 `/give` 命令组件语法，为 `src/logic/builder.ts`
-提供**服务器实证**的语法真相。可无人值守批量跑多个版本（适合过夜运行）。
+通过临时官方 Minecraft 服务端验证生成结果。仅手动运行，不随提交启动；测试世界与用户世界隔离，服务端内存上限 1GB。各版本顺序执行，下载缓存可通过 `SOUL_LANTERN_MC_CACHE` 指定。
 
-## 原理
+## 验证范围
 
-Minecraft 服务器执行 `give @a ...` 时**先解析语法，再查找目标玩家**。
-因此无需任何玩家加入：
+- `index.mjs`：检查 `/give` 组件的多种候选写法。无人在线时，正确解析的命令返回 `No player was found`。
+- `fixtures.mjs`：执行私有服务端构建器导出的真实命令，覆盖 14 种指令类型，并增加属性修饰符、告示牌和装饰物品样例。读回实体属性、装备附魔、容器附魔、名字和告示牌文本，检查解析成功后效果是否正确。
+- `datapack-metadata.mjs`：单独编译客户端实际的数据包元数据函数，生成各版本 `pack.mcmeta`，交给原版服务端检查函数是否成功加载。
+- `rcon.test.mjs`：轻量协议回归测试，检查认证确认、响应分片、空响应、连接中断和超时。
 
-- 语法合法但无玩家 → `No player was found`
-- 语法非法 → `Unknown argument` / `Expected ']'` / `Malformed ... component` / `<--[HERE]`
-
-验证器通过 RCON 发送探针命令，根据响应判定每种写法是否被服务器接受。
+样例通过意味着这些生成路径得到验证，不能证明 AI 自由输入的所有 SNBT、选择器和 `execute` 子命令都有效。网络、认证、连接或超时错误会让验证失败，不会被当成语法通过。
 
 ## 用法
 
 ```bash
-# 列出可用 release 版本
 node scripts/mc-verifier/index.mjs --list
+node scripts/mc-verifier/index.mjs 1.21 1.21.2 1.21.5 26.3
+node --test scripts/mc-verifier/rcon.test.mjs
 
-# 验证单个或多个版本
-node scripts/mc-verifier/index.mjs 1.21.1
-node scripts/mc-verifier/index.mjs 1.21 1.21.1 1.21.2 1.21.4 1.21.11
-
-# 也可通过 npm
-npm run verify-syntax -- 1.21.1
+# 私有服务端导出 fixtures.json 后
+node scripts/mc-verifier/datapack-metadata.mjs fixtures.json pack-metadata.json
+node scripts/mc-verifier/fixtures.mjs fixtures.json pack-metadata.json
 ```
 
-前提：
+`MC_VERIFY_VERSIONS` 可限制实际测试版本，格式为 `1.21 26.3`。1.20.5～1.21.x 需要 Java 21 或更新版本，26.x 需要 Java 25 或更新版本。元数据工具还需要 Rust，但不构建整个客户端。
 
-- 本机可用 `java`（1.21.x 需要 Java 21+；**26.1 / 26.2+ 需要 Java 25+**，
-  否则服务器启动即报 `UnsupportedClassVersionError`）
-- 可访问 `piston-meta.mojang.com`（下载 server.jar）
-- 每个版本 server.jar 约 50MB，缓存在 `cache/`（已被 .gitignore 忽略）
+公开仓库的 `minecraft-verify.yml` 手动验证前端与 give 探针；私有仓库的 `verify-and-musl.yml` 手动导出和验证真实服务端命令。只有显式选择 `build_musl` 且前面的验证通过，私有流程才生成部署二进制。
 
-## 输出
+## 独立语法边界
 
-每个版本写入 `results/<version>/`：
+`give` 的组件分组不能直接作为所有 AI 指令的版本分组。构建器应按各项语法自己的版本边界判断，提示词与构建器保持一致。
 
-- `raw.json`：每条探针的命令、原始服务器响应、分类结果
-- `report.json`：按特性聚合，含 builder 当前输出是否被接受（PASS/FAIL/N/A）
-- `report.txt`：人类可读摘要
+| 特性 | 变化边界 |
+|---|---|
+| 实体属性 NBT | 1.21 开始使用 `attributes`、`id`、`base`；1.20.5 使用 `Attributes`、`Name`、`Base` |
+| 属性修饰符标识 | 1.21 开始使用资源位置 `id`；更早版本使用 UUID 与名称 |
+| 属性名称 | 1.21.2 开始移除 `generic.`、`player.`、`zombie.` 前缀 |
+| 实体装备、文本组件 | 1.21.5 开始使用 `equipment` 与直接 SNBT 文本组件；更早版本使用旧装备字段与 JSON 字符串 |
+| give 附魔组件 | 1.21.5 之前输出规范的 `levels` 包装，之后输出扁平映射；旧版也可能接受简写 |
+| give 属性修饰符组件 | 1.21.5 之前使用 `modifiers` 包装，之后使用数组；组件形态与属性名称变化是独立的 |
+| 粒子方块状态 | 26.3 使用 `id`、`properties`，此前使用 `Name`、`Properties` |
 
-### 报告判定
+每次正式版更新：先生成官方目录，再查看变化涉及哪些规则，增加对应样例，执行真实服务端验证。没有变化的规则继续复用。
 
-- `PASS`：builder.ts 对该版本族实际输出的格式被服务器接受
-- `FAIL`：builder.ts 的某个实际输出格式被服务器拒绝（需修正 builder）
-- `N/A`：builder.ts 对该版本族不输出此特性（仅记录服务器是否支持）
-- 候选行内 `*` 标记表示该版本族 builder **实际会输出**这种格式
+## 输出与文件
 
-版本 → builder 族映射见 `probes.mjs` 的 `familyOf()`：
-`1.20.5` / `1.20.6` 为 `early`；`1.21` / `1.21.1` 为 `legacy`；
-`1.21.2` / `1.21.3` / `1.21.4` 为 `mid`；其余 Java 版（1.21.5+、26.x）默认 `modern`。
-
-## 文件结构
+`results/<version>/raw.json` 保存 give 探针响应，`report.json` 和 `report.txt` 聚合候选写法；`builder.json` 保存真实构建器样例、读回结果与服务端日志。探针中的 `builderFamilies` 描述 give 组件分组，不代表其他指令的适配边界。
 
 | 文件 | 职责 |
-|------|------|
-| `index.mjs` | 主入口：编排下载 → 启动 → 探针 → 报告 |
-| `mojang.mjs` | 从 Mojang 清单 API 下载并校验 server.jar |
-| `server.mjs` | 服务器进程生命周期（临时工作目录、超平坦世界、RCON 配置） |
-| `rcon.mjs` | 纯 Node.js Source RCON 客户端，无外部依赖 |
-| `probes.mjs` | 探针集（特性 → 多候选格式）与响应分类器 |
-| `report.mjs` | 结果聚合与文本摘要 |
+|---|---|
+| `mojang.mjs` | 下载并校验官方服务端，设置网络超时 |
+| `server.mjs` | 临时普通世界、RCON、测试数据包与进程清理 |
+| `rcon.mjs` | 按请求 ID 接收响应分片，空响应允许，超时和断线报错 |
+| `probes.mjs`、`report.mjs` | give 候选写法与结果汇总 |
+| `fixtures.mjs` | 真实生成命令及关键效果读回 |
 
-## 扩展探针
-
-在 `probes.mjs` 的 `PROBES` 数组添加条目：
-
-```js
-{
-  feature: "某特性",          // 同特性的多个候选会归为一组
-  id: "唯一标识",
-  command: g('组件=值'),      // g() 自动包成 give @a minecraft:stone[...] 1
-  builderFamilies: ["legacy"],// builder.ts 当前对哪些族输出该格式（驱动 PASS/FAIL）
-  note: "说明",
-}
-```
-
-耐久相关组件（max_damage 等）用 `gd()`（不可堆叠物品），避免触发
-"Item cannot be both damageable and stackable" 这类物品约束错误，
-保证失败只来自语法本身。
-
-## 四个 Java 语法族（均 server 实证）
-
-builder.ts 按 `familyOf()` 把组件时代（1.20.5+）的 Java 版本分为四族：
-
-| 特性 | early (1.20.5/1.20.6) | legacy (1.21/1.21.1) | mid (1.21.2~1.21.4) | modern (1.21.5+、26.x) |
-|------|-----------------------|----------------------|---------------------|------------------------|
-| 文本 custom_name/item_name/lore | SNBT 单引号字符串 | SNBT 单引号字符串 | SNBT 单引号字符串 | 直接 JSON |
-| enchantments | 扁平 `{...}` | `{levels:{...}}` | 扁平 `{...}` | 扁平 `{...}` |
-| attribute_modifiers | **不输出**（所有格式被拒） | `{modifiers:[{type:"generic.armor",id:"..."}]}` | `[{type:armor,id:"..."}]` | `[{type:armor,id:"..."}]` |
-| 属性 id | — | 引号字符串（数字 id 被拒） | 引号字符串 | 引号字符串 |
-| can_place_on / can_break | `{predicates:[{blocks:"ns"}]}` | `{predicates:[{blocks:"ns"}]}` | `{predicates:[{blocks:"ns"}]}` | `[{blocks:"ns"}]` |
-| 食用 | 并入 `food` | 并入 `food`（eat_seconds/effects） | 独立 `consumable` | 独立 `consumable` |
-| consumable / glider / death_protection | 不支持 | 不支持 | 支持 | 支持 |
-| tooltip_display | 不支持 | 不支持 | 不支持（Unknown component） | 支持，`hidden_components:["ns"]` |
-
-各版本完整逐项结果见 `results/<version>/report.txt`。
-
-设计要点：
-- **early**：组件时代最初形态，文本/方块限制同 legacy，但 attribute_modifiers 所有已知格式
-  均被服务器拒绝（暂不输出），且尚无 consumable/glider/death_protection/tooltip。
-- **mid**：在 modern 基础上，文本与 can_place_on/can_break 回退到 legacy 写法，并省略 tooltip_display。
-- **版本边界**：early→legacy 在 1.20.6→1.21；mid→modern 在 1.21.4→1.21.5；26.1/26.2+ 仍为 modern。
+扩展探针时，应让测试物品满足组件约束。例如 `max_damage` 使用不可堆叠物品，避免把物品约束失败误判为语法失败。
