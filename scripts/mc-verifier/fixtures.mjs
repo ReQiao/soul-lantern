@@ -25,7 +25,7 @@ for (const [version, commands] of Object.entries(fixtures)) {
     server = await startServer({jarPath, version, log: console.log, packMetadata:packMetadata[version]});
     rcon = new RconClient(server.rcon);
     await rcon.connect();
-    const load = await rcon.send('forceload add 0 0', {timeoutMs:30000, graceMs:25000});
+    const load = await rcon.send('forceload add 0 0', {timeoutMs:30000});
     console.log(version, '加载临时区块:', load);
     if (packMetadata[version]) {
       const response = await rcon.send('function sl_verify:run');

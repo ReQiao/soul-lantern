@@ -59,16 +59,20 @@ export class RconClient {
 
       socket.once("error", onError);
       socket.on("data", (chunk) => this._onData(chunk));
+      socket.once("close", () => {
+        for (const listener of [...this.packetListeners]) listener.reject?.(new Error("RCON 连接已关闭"));
+      });
       socket.once("connect", async () => {
         cleanup();
         socket.on("error", (err) => {
           // 连接建立后的错误转交给挂起的监听器
-          for (const l of this.packetListeners) l.reject?.(err);
+          for (const l of [...this.packetListeners]) l.reject?.(err);
         });
         try {
           await this._authenticate(timeoutMs);
           resolve(this);
         } catch (err) {
+          socket.destroy();
           reject(err);
         }
       });
@@ -78,7 +82,7 @@ export class RconClient {
   async _authenticate(timeoutMs) {
     const id = this._send(SERVERDATA_AUTH, this.password);
     const packet = await this._waitForPacket(
-      (p) => p.type !== SERVERDATA_RESPONSE_VALUE || p.id === id || p.id === -1,
+      (p) => p.type === SERVERDATA_EXECCOMMAND && (p.id === id || p.id === -1),
       timeoutMs,
     );
     // 部分服务端会先发一个空的 RESPONSE_VALUE，再发 AUTH_RESPONSE。
@@ -88,81 +92,40 @@ export class RconClient {
     }
   }
 
-  /**
-   * 发送命令并收集完整响应。
-   * 使用“栅栏包”技术：在真实命令后再发一个空响应请求，
-   * 服务端按序回复，收到栅栏响应即说明真实命令的所有分片已到齐。
-   *
-   * 注意：栅栏偶尔会先于真实响应到达（实测在 26.2 上会零星发生，表现为
-   * 命令明明执行了却读回空串）。因此栅栏到达时若一个字节都没收到，
-   * 再多等一个 graceMs 宽限窗口，避免把在途响应误判为“无输出”。
-   *
-   * @param {string} command 不带前导斜杠的命令
-   * @param {number} settleMs 收到数据后的静默窗口
-   * @param {number} graceMs 栅栏先到且 body 为空时的额外等待
-   * @returns {Promise<string>}
-   */
-  async send(command, { timeoutMs = 8000, settleMs = 400, graceMs = 600 } = {}) {
-    const cmdId = this._send(SERVERDATA_EXECCOMMAND, command);
-    const fenceId = this._send(SERVERDATA_RESPONSE_VALUE, "");
-
+  // Minecraft 的 RCON 实现可能把同一 TCP 读取中的两个请求当成坏包。
+  // 每次只发一个命令，按请求 ID 收集分片，通过静默窗口结束响应。
+  async send(command, { timeoutMs = 8000, settleMs = 200 } = {}) {
+    const id = this._send(SERVERDATA_EXECCOMMAND, command);
     return new Promise((resolve, reject) => {
       let body = "";
-      let settleTimer = null;
-      let graceTimer = null;
-      const hardTimer = setTimeout(() => {
-        finish();
-      }, timeoutMs);
-
-      const listener = {
-        onPacket: (p) => {
-          if (p.id === cmdId) {
-            body += p.body;
-            // 收到数据后启动静默窗口兜底
-            if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
-            if (settleTimer) clearTimeout(settleTimer);
-            settleTimer = setTimeout(finish, settleMs);
-          } else if (p.id === fenceId) {
-            // 栅栏到达：正常情况下真实响应已在前面收齐，可以收尾；
-            // 但若此刻还是空的，八成是乱序，给在途响应留一个宽限窗口。
-            if (body) finish();
-            else if (!graceTimer) graceTimer = setTimeout(finish, graceMs);
-          }
-        },
-        reject: (err) => {
-          cleanupListener();
-          clearTimeout(hardTimer);
-          if (settleTimer) clearTimeout(settleTimer);
-          if (graceTimer) clearTimeout(graceTimer);
-          reject(err);
-        },
-      };
-      this.packetListeners.push(listener);
-
-      const cleanupListener = () => {
-        const i = this.packetListeners.indexOf(listener);
-        if (i >= 0) this.packetListeners.splice(i, 1);
-      };
-      const finish = () => {
-        cleanupListener();
+      let settleTimer;
+      const cleanup = () => {
         clearTimeout(hardTimer);
-        if (settleTimer) clearTimeout(settleTimer);
-        if (graceTimer) clearTimeout(graceTimer);
-        resolve(body);
+        clearTimeout(settleTimer);
+        const index = this.packetListeners.indexOf(listener);
+        if (index >= 0) this.packetListeners.splice(index, 1);
       };
+      const listener = {
+        onPacket: packet => {
+          if (packet.id !== id) return;
+          body += packet.body;
+          clearTimeout(settleTimer);
+          settleTimer = setTimeout(() => { cleanup(); resolve(body); }, settleMs);
+        },
+        reject: error => { cleanup(); reject(error); },
+      };
+      const hardTimer = setTimeout(() => listener.reject(new Error(`RCON 命令响应超时：${command}`)), timeoutMs);
+      this.packetListeners.push(listener);
     });
   }
 
   close() {
     return new Promise((resolve) => {
-      if (!this.socket) return resolve();
-      this.socket.once("close", () => resolve());
+      if (!this.socket || this.socket.destroyed) return resolve();
+      const timer = setTimeout(() => { this.socket?.destroy(); resolve(); }, 2000);
+      this.socket.once("close", () => { clearTimeout(timer); resolve(); });
       this.socket.end();
-      // 兜底强制销毁
-      setTimeout(() => {
-        this.socket?.destroy();
-        resolve();
-      }, 2000);
+
     });
   }
 
@@ -178,6 +141,7 @@ export class RconClient {
     packet.writeInt32LE(type, 8);
     payloadBuf.copy(packet, 12);
     // 末尾两个 null 字节已由 alloc 置零
+    if (!this.socket || this.socket.destroyed) throw new Error("RCON 连接不可用");
     this.socket.write(packet);
     return id;
   }
@@ -198,23 +162,23 @@ export class RconClient {
       for (const l of [...this.packetListeners]) {
         l.onPacket?.(packet);
       }
-      if (this._oneShot) this._oneShot(packet);
     }
   }
 
   _waitForPacket(predicate, timeoutMs) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._oneShot = null;
-        reject(new Error(`RCON 等待响应超时（${timeoutMs}ms）`));
-      }, timeoutMs);
-      this._oneShot = (packet) => {
-        if (predicate(packet)) {
-          clearTimeout(timer);
-          this._oneShot = null;
-          resolve(packet);
-        }
+      const cleanup = () => {
+        clearTimeout(timer);
+        const index = this.packetListeners.indexOf(listener);
+        if (index >= 0) this.packetListeners.splice(index, 1);
       };
+      const listener = {
+        onPacket: packet => { if (predicate(packet)) { cleanup(); resolve(packet); } },
+        reject: error => { cleanup(); reject(error); },
+      };
+      const timer = setTimeout(() => listener.reject(new Error(`RCON 等待响应超时（${timeoutMs}ms）`)), timeoutMs);
+      this.packetListeners.push(listener);
     });
   }
+
 }
