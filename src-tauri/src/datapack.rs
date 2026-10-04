@@ -84,11 +84,15 @@ pub struct DeployResult {
 
 /// 各平台默认的 .minecraft，以及 Linux 上 Flatpak 版启动器的位置。
 fn default_minecraft_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = minecraft_dir().into_iter().collect();
+    let dirs: Vec<PathBuf> = minecraft_dir().into_iter().collect();
     #[cfg(target_os = "linux")]
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(home.join(".var/app/com.mojang.Minecraft/.minecraft"));
-    }
+    let dirs = {
+        let mut dirs = dirs;
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(home.join(".var/app/com.mojang.Minecraft/.minecraft"));
+        }
+        dirs
+    };
     dirs
 }
 
