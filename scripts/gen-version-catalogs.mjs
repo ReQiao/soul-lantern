@@ -19,8 +19,17 @@ const catalogs = {};
 for (const [key, version] of versions) {
   const output = path.join(scratch, `${version}.ts`);
   const snapshot = path.join(scratch, `${version}.json`);
-  execFileSync(process.execPath, [path.join(root, "scripts/gen-catalog.mjs"), version,
-    "--output", output, "--snapshot-output", snapshot], { stdio: "inherit" });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      execFileSync(process.execPath, [path.join(root, "scripts/gen-catalog.mjs"), version,
+        "--output", output, "--snapshot-output", snapshot], { stdio: "inherit" });
+      break;
+    } catch (error) {
+      if (attempt === 3) throw error;
+      console.warn(`${version} 生成失败，稍后重试 (${attempt}/3)`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
   catalogs[key] = JSON.parse(readFileSync(snapshot, "utf8"));
   if (!catalogs[key].items.length || !catalogs[key].blocks.length) {
     throw new Error(`${version} 的注册表为空，拒绝覆盖现有目录`);
