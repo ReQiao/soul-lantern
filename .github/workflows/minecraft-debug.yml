@@ -53,3 +53,19 @@ jobs:
         with:
           workspaces: src-tauri
       - run: cargo check --manifest-path src-tauri/Cargo.toml --locked --lib
+  jdk-download:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri/mc-debug
+          shared-key: mc-debug
+      - name: 首次下载与复用 JDK 21、JDK 25（ZIP 与 TAR）
+        run: cargo test --manifest-path src-tauri/mc-debug/Cargo.toml --locked --lib first_use_downloads_both_official_jdks -- --ignored --nocapture

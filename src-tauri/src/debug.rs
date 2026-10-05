@@ -95,8 +95,9 @@ pub fn debug_state() -> DebugState {
 
 #[tauri::command]
 pub async fn debug_enable(cache_dir: String, eula_accepted: bool) -> Result<DebugState, String> {
-    #[cfg(mobile)]
-    return Err("本机调试仅支持桌面系统。".into());
+    if cfg!(mobile) {
+        return Err("本机调试仅支持桌面系统。".into());
+    }
     if !eula_accepted {
         return Err("启动官方 Minecraft 服务端前，请阅读并同意 Minecraft EULA。".into());
     }

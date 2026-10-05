@@ -257,7 +257,9 @@ impl Engine {
             }
             // reload 异步完成。不存在的函数不会执行；首次成功加载后只执行一次。
             let response = rcon.send(&format!("function {function}"))?;
-            if response.contains("Executed ") && response.contains(&function) {
+            if (response.contains("Running function ") || response.contains("Executed "))
+                && response.contains(&function)
+            {
                 break response;
             }
             let unknown = response.contains("Unknown function") && response.contains(&function);

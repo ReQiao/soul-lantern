@@ -254,83 +254,91 @@ fn installed(major: u32) -> Option<PathBuf> {
 
 // 首次调试同时准备两代 JDK；只解压到自有缓存，不更改系统 Java 或 PATH。
 pub fn jdks(cache: &Path, cancel: &Cancellation, progress: &Progress) -> Result<[PathBuf; 2]> {
-    let client = client()?;
     let mut found = Vec::new();
     for major in [21, 25] {
         cancel.check()?;
-        if let Some(java) = installed(major) {
-            found.push(java);
-            continue;
-        }
-        let target = cache.join(format!("jdk-{major}"));
-        if is_jdk(&target, major) {
-            found.push(java_bin(&target));
-            continue;
-        }
-        let (os, extension) = match std::env::consts::OS {
-            "windows" => ("windows", "zip"),
-            "linux" => ("linux", "tar.gz"),
-            "macos" => ("macos", "tar.gz"),
-            _ => return Err("此平台不支持本机调试服务端。".into()),
-        };
-        let (arch, bitness) = match std::env::consts::ARCH {
-            "x86_64" => ("x86", "64"),
-            "aarch64" => ("arm", "64"),
-            _ => return Err("本机调试需要 64 位 x86 或 ARM 系统。".into()),
-        };
-        progress(&format!("正在查询 JDK {major} 官方下载…"));
-        let url = format!(
-            "https://api.azul.com/metadata/v1/zulu/packages/?java_version={major}&os={os}&arch={arch}&hw_bitness={bitness}&java_package_type=jdk&javafx_bundled=false&release_status=ga&availability_types=CA&archive_type={extension}&latest=true&certifications=tck"
-        );
-        let packages = json(&client, &url)?;
-        let package = packages
-            .as_array()
-            .and_then(|a| {
-                a.iter().find(|p| {
-                    let name = p["name"].as_str().unwrap_or("");
-                    !name.contains("crac") && !name.contains("musl") && !name.contains("fx-")
-                })
-            })
-            .ok_or("没有找到适合此系统的官方 JDK。")?;
-        let detail = json(
-            &client,
-            &format!(
-                "https://api.azul.com/metadata/v1/zulu/packages/{}",
-                field(package, "package_uuid")?
-            ),
-        )?;
-        let archive = cache.join(format!("jdk-{major}.{extension}"));
-        download(
-            &client,
-            field(&detail, "download_url")?,
-            &archive,
-            field(&detail, "sha256_hash")?,
-            true,
-            &format!("JDK {major}"),
-            cancel,
-            progress,
-        )?;
-        progress(&format!("正在解压 JDK {major}…"));
-        let staging = tempfile::Builder::new()
-            .prefix("jdk-unpack-")
-            .tempdir_in(cache)
-            .map_err(|e| e.to_string())?;
-        extract(&archive, staging.path(), os == "windows", cancel)?;
-        let root = fs::read_dir(staging.path())
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .map(|p| p.path())
-            .find(|p| p.is_dir() && is_jdk(p, major))
-            .ok_or("解压后的 JDK 不能运行。")?;
-        cancel.check()?;
-        if target.exists() {
-            fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
-        }
-        fs::rename(root, &target).map_err(|e| e.to_string())?;
-        let _ = fs::remove_file(archive);
-        found.push(java_bin(&target));
+        found.push(if let Some(java) = installed(major) {
+            java
+        } else {
+            download_jdk(cache, major, cancel, progress)?
+        });
     }
     Ok([found.remove(0), found.remove(0)])
+}
+
+fn download_jdk(
+    cache: &Path,
+    major: u32,
+    cancel: &Cancellation,
+    progress: &Progress,
+) -> Result<PathBuf> {
+    let client = client()?;
+    let target = cache.join(format!("jdk-{major}"));
+    if is_jdk(&target, major) {
+        return Ok(java_bin(&target));
+    }
+    let (os, extension) = match std::env::consts::OS {
+        "windows" => ("windows", "zip"),
+        "linux" => ("linux", "tar.gz"),
+        "macos" => ("macos", "tar.gz"),
+        _ => return Err("此平台不支持本机调试服务端。".into()),
+    };
+    let (arch, bitness) = match std::env::consts::ARCH {
+        "x86_64" => ("x86", "64"),
+        "aarch64" => ("arm", "64"),
+        _ => return Err("本机调试需要 64 位 x86 或 ARM 系统。".into()),
+    };
+    progress(&format!("正在查询 JDK {major} 官方下载…"));
+    let url = format!(
+        "https://api.azul.com/metadata/v1/zulu/packages/?java_version={major}&os={os}&arch={arch}&hw_bitness={bitness}&java_package_type=jdk&javafx_bundled=false&release_status=ga&availability_types=CA&archive_type={extension}&latest=true&certifications=tck"
+    );
+    let packages = json(&client, &url)?;
+    let package = packages
+        .as_array()
+        .and_then(|a| {
+            a.iter().find(|p| {
+                let name = p["name"].as_str().unwrap_or("");
+                !name.contains("crac") && !name.contains("musl") && !name.contains("fx-")
+            })
+        })
+        .ok_or("没有找到适合此系统的官方 JDK。")?;
+    let detail = json(
+        &client,
+        &format!(
+            "https://api.azul.com/metadata/v1/zulu/packages/{}",
+            field(package, "package_uuid")?
+        ),
+    )?;
+    let archive = cache.join(format!("jdk-{major}.{extension}"));
+    download(
+        &client,
+        field(&detail, "download_url")?,
+        &archive,
+        field(&detail, "sha256_hash")?,
+        true,
+        &format!("JDK {major}"),
+        cancel,
+        progress,
+    )?;
+    progress(&format!("正在解压 JDK {major}…"));
+    let staging = tempfile::Builder::new()
+        .prefix("jdk-unpack-")
+        .tempdir_in(cache)
+        .map_err(|e| e.to_string())?;
+    extract(&archive, staging.path(), os == "windows", cancel)?;
+    let root = fs::read_dir(staging.path())
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|p| p.path())
+        .find(|p| p.is_dir() && is_jdk(p, major))
+        .ok_or("解压后的 JDK 不能运行。")?;
+    cancel.check()?;
+    if target.exists() {
+        fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    }
+    fs::rename(root, &target).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(archive);
+    Ok(java_bin(&target))
 }
 
 fn extract(archive: &Path, destination: &Path, zip: bool, cancel: &Cancellation) -> Result<()> {
@@ -390,5 +398,22 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert_ne!(hash_file(&path, false).unwrap(), "0".repeat(40));
+    }
+    #[test]
+    #[ignore = "仅在云端验证首次使用的官方 JDK 下载与解压"]
+    fn first_use_downloads_both_official_jdks() {
+        let cache = tempfile::tempdir().unwrap();
+        let cancel = Cancellation::default();
+        for major in [21, 25] {
+            let java =
+                download_jdk(cache.path(), major, &cancel, &|text| println!("{text}")).unwrap();
+            assert!(java.is_file());
+            assert!(is_jdk(&cache.path().join(format!("jdk-{major}")), major));
+            let cached = download_jdk(cache.path(), major, &cancel, &|_| {
+                panic!("有效 JDK 缓存不应重新下载")
+            })
+            .unwrap();
+            assert_eq!(java, cached);
+        }
     }
 }
