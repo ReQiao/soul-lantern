@@ -39,6 +39,7 @@ pub fn token() -> Option<String> {
 }
 
 pub fn save(token: &str, expires_at: u64) {
+    crate::debug::shutdown();
     let Some(path) = session_path() else { return };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -50,6 +51,7 @@ pub fn save(token: &str, expires_at: u64) {
 }
 
 pub fn clear() {
+    crate::debug::shutdown();
     if let Some(path) = session_path() {
         let _ = std::fs::remove_file(path);
     }

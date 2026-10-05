@@ -20,11 +20,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { auth, refreshAuth } from "../logic/auth";
 import CustomSelect from "./CustomSelect.vue";
 import InfoTip from "./InfoTip.vue";
+import DebugSettingsPanel from "./DebugSettingsPanel.vue";
+import { refreshDebug } from "../logic/debug";
 
 const props = defineProps<{ active?: boolean }>();
 const emit = defineEmits<{ toast: [message: string, duration?: number] }>();
 
-type Tab = "users" | "reports" | "words" | "telemetry" | "env" | "policy" | "health";
+type Tab = "users" | "reports" | "words" | "telemetry" | "env" | "policy" | "health" | "debug";
 const tab = ref<Tab>("users");
 const tabOptions = [
   { label: "用户", value: "users" },
@@ -34,6 +36,7 @@ const tabOptions = [
   { label: "环境变量", value: "env" },
   { label: "价格配置", value: "policy" },
   { label: "运行状态", value: "health" },
+  { label: "本机调试", value: "debug" },
 ];
 
 const busy = ref(false);
@@ -391,6 +394,7 @@ async function loadTab() {
   else if (tab.value === "telemetry") await loadTelemetry();
   else if (tab.value === "env") await loadEnv();
   else if (tab.value === "policy") await loadPolicy();
+  else if (tab.value === "debug") await run(() => refreshDebug());
   else await loadHealth();
 }
 
@@ -651,6 +655,8 @@ watch(
         </div>
         <p v-if="!telemetryRows.length" class="plaza-md-empty">还没有数据。</p>
       </template>
+
+      <DebugSettingsPanel v-else-if="tab === 'debug'" />
 
       <!-- ================= 运行状态 ================= -->
       <template v-else>

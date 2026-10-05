@@ -29,6 +29,7 @@ import {
 import { reportError } from "../logic/telemetry";
 import CustomSelect from "./CustomSelect.vue";
 import DeployPanel from "./DeployPanel.vue";
+import DebugCommandButton from "./DebugCommandButton.vue";
 import InfoTip from "./InfoTip.vue";
 
 /**
@@ -39,6 +40,7 @@ import InfoTip from "./InfoTip.vue";
  * （也就是每次切进 AI 模式）都重新点一次。
  */
 const props = defineProps<{ version: GiveVersion; animate?: boolean; active?: boolean }>();
+const generatedVersion = ref<GiveVersion>(props.version);
 const emit = defineEmits<{
   (e: "toast", message: string, duration?: number): void;
   (e: "update:version", version: GiveVersion): void;
@@ -519,20 +521,21 @@ async function generate() {
   failures.value = [];
 
   const thisTurnText = userText.value.trim();
+  const thisTurnVersion = props.version;
 
   try {
     const res = usingByok.value
       ? await invoke<AiResponse>("byok_generate", {
-          systemPrompt: buildSystemPrompt(props.version),
+          systemPrompt: buildSystemPrompt(thisTurnVersion),
           userText: thisTurnText,
-          version: props.version,
+          version: thisTurnVersion,
           history: history.value,
         })
       : await invoke<AiResponse>("ai_generate", {
-          systemPrompt: buildSystemPrompt(props.version),
+          systemPrompt: buildSystemPrompt(thisTurnVersion),
           userText: thisTurnText,
           model: apiModel.value.trim() || null,
-          version: props.version,
+          version: thisTurnVersion,
           history: history.value,
         });
 
@@ -548,6 +551,7 @@ async function generate() {
     // 解析/校验/构建现在全部在服务器上完成（server/src/give/），这里直接
     // 用服务器已经分好类的结果，不用再自己解析 AI 输出、跑目录校验。
     explanation.value = res.explanation;
+    generatedVersion.value = thisTurnVersion;
     commands.value = res.commands;
     loopCommands.value = res.loopCommands;
     failures.value = res.failures;
@@ -810,6 +814,7 @@ defineExpose({ userText, usePrompt });
       <li v-for="(cmd, i) in commands" :key="i">
         <code>{{ cmd }}</code>
         <button type="button" @click="copyText(cmd, '这条指令')">复制</button>
+        <DebugCommandButton :command="cmd" :version="generatedVersion" />
       </li>
     </ul>
 
@@ -821,7 +826,7 @@ defineExpose({ userText, usePrompt });
         会自动挂到数据包的 tick 循环上，/reload 后自动生效：
       </p>
       <ul class="ai-results ai-loop-results">
-        <li v-for="(cmd, i) in loopCommands" :key="i"><code>{{ cmd }}</code></li>
+        <li v-for="(cmd, i) in loopCommands" :key="i"><code>{{ cmd }}</code><DebugCommandButton :command="cmd" :version="generatedVersion" /></li>
       </ul>
     </div>
 

@@ -10,6 +10,7 @@ import InfoTip from "./components/InfoTip.vue";
 import ItemPickerModal from "./components/ItemPickerModal.vue";
 import AiPanel from "./components/AiPanel.vue";
 import DeployPanel from "./components/DeployPanel.vue";
+import DebugCommandButton from "./components/DebugCommandButton.vue";
 import NumberInput from "./components/NumberInput.vue";
 import RichTextEditor from "./components/RichTextEditor.vue";
 import AuthModal from "./components/AuthModal.vue";
@@ -1600,6 +1601,7 @@ function textOptions(items: string[]): SelectOption[] {
     <section v-show="mode === 'manual'" class="card preview-card" :class="{ flash: rowFlash.preview }">
       <label>生成结果</label>
       <textarea id="preview" v-model="preview" placeholder="点击“生成指令”后，最终指令会显示在这里。" spellcheck="false"></textarea>
+      <DebugCommandButton :command="preview" :version="form.version" />
       <DeployPanel
         v-if="preview.trim() && form.version !== 'bedrock'"
         :commands="[preview]"

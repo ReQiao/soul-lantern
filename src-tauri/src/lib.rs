@@ -7,6 +7,7 @@ pub mod billing;
 pub mod byok;
 pub mod contributor;
 mod datapack;
+mod debug;
 pub mod paths;
 pub mod plaza;
 pub mod remote;
@@ -31,6 +32,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
+            debug::debug_state,
+            debug::debug_enable,
+            debug::debug_disable,
+            debug::debug_validate,
             ai::ai_generate,
             auth::auth_state,
             auth::auth_required,
@@ -96,6 +101,11 @@ pub fn run() {
             window::window_toggle_fullscreen,
             window::window_is_fullscreen,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if matches!(event, tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }) {
+                debug::shutdown();
+            }
+        });
 }
