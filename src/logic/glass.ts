@@ -378,7 +378,8 @@ function apply(el: HTMLElement) {
   });
 
   // 大面板模糊更强、小控件更轻，这是"厚度"最直观的那一半。
-  const blur = num(cs, "--glass-blur", 12) * (0.8 + 0.5 * t) * (0.7 + 0.6 * (1 - c));
+  const clearProgress = Math.max(0, (c - DEFAULT_CLARITY) / (1 - DEFAULT_CLARITY));
+  const blur = num(cs, "--glass-blur", 12) * (0.8 + 0.5 * t) * (0.7 + 0.6 * (1 - c)) * (1 - 0.9 * clearProgress);
   const saturate = num(cs, "--glass-saturate", 180);
   const brightness = num(cs, "--glass-brightness", 1.04);
 

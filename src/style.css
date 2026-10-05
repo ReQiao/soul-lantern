@@ -38,7 +38,7 @@
      现在铺的是深蓝黑，靠 alpha 控制通透度。 */
   /* 【染色浓度跟着 --clarity 走】那根滑杆（WWDC26 的透明度轴）不只是改折射，
      底色也要跟着变，否则拖到"最实"那一端玻璃还是透的、字还是看不清。
-     --glass-tint-alpha 定义在文件末尾那段液态玻璃里，下限 0.22 是可读性硬底线。
+     --glass-tint-alpha 定义在文件末尾那段液态玻璃里，下限 0.02，让最透明的一端接近清玻璃。
      两档渐变各自在这个基准上偏移，保持原来"上浅下深"的层次。 */
   --glass-tint: linear-gradient(
     180deg,
@@ -259,12 +259,8 @@ button {
   background-repeat: no-repeat;
   background-position: center, center, center;
   background-size: min(30vw, 30vh) auto, min(150vw, 150vh) min(150vw, 150vh), cover;
-  /*
-   * 模糊半径也跟 clarity 走一点点（26px 基准，clarity 每往清透端多 0.1 就
-   * 少糊 1px，幅度控制得很轻）——这是**静态**滤镜，只在内容或这条声明本身
-   * 变化时重算一次，不是每帧重算，改这个不会把前面测过的那份帧率数据作废。
-   */
-  filter: blur(calc(26px - 6px * var(--clarity))) saturate(150%) brightness(1.02);
+  /* 默认模糊不变，清透端逐渐移除模糊；背景仍只做静态滤镜。 */
+  filter: blur(calc((26px - 6px * var(--clarity)) * (1 - var(--glass-clear-progress)))) saturate(150%) brightness(1.02);
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -3325,14 +3321,13 @@ button#primary,
  * 染色的浓度跟着它走：越不透明，底色压得越实，玻璃上的字越好读。
  * 真正消费 --glass-tint-alpha 的是文件开头的 --glass-tint / --glass-tint-strong。
  *
- * 【0.22 是可读性硬底线，别再往下调】玻璃背后是动态内容，静态测对比度没有
- * 意义，只能用底色的不透明度下限来保证最坏情况（背后正好是一块和文字同色的
- * 大色块）仍然读得清。
+ * 默认 0.55 时保留原来的底色浓度，左右两端扩大到更实和接近无染色。
+ * 清透端同步降低模糊，系统「减少透明度」仍单独覆盖。
  */
 :root {
   --clarity: 0.55;
-  /* clamp 的下限就是那条底线。calc 里 1 - clarity 让"越清透染色越淡"。 */
-  --glass-tint-alpha: clamp(0.22, calc(0.2 + 0.34 * (1 - var(--clarity))), 0.62);
+  --glass-clear-progress: clamp(0, calc((var(--clarity) - 0.55) * 2.222222), 1);
+  --glass-tint-alpha: clamp(0.02, calc(0.76 - 0.74 * var(--clarity)), 0.76);
 }
 
 /* ---- ② 阴影随尺寸增强 ----
@@ -3458,8 +3453,25 @@ button#primary,
 }
 
 /* 玻璃透明度滑杆。放在设置那一列里，跟"启用界面动画"并排。 */
+.clarity-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.clarity-level {
+  font-size: 0.82rem;
+  line-height: 1;
+  color: rgba(235, 246, 255, 0.72);
+  white-space: nowrap;
+}
+
 .clarity-slider {
   width: 100%;
+  min-width: 0;
+  margin: 0;
   accent-color: #ffc45c;
   cursor: pointer;
 }

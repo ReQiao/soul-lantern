@@ -1368,14 +1368,20 @@ function textOptions(items: string[]): SelectOption[] {
             玻璃透明度
             <InfoTip text="界面上那层毛玻璃有多透。往左更实、字更好读；往右更通透、折射更明显。系统开了「减少透明度」时会自动按最实的那一端处理。" />
           </span>
-          <input
-            v-model.number="glassClarity"
-            class="clarity-slider"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-          />
+          <div class="clarity-control">
+            <span class="clarity-level" aria-hidden="true">低</span>
+            <input
+              v-model.number="glassClarity"
+              class="clarity-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              aria-label="玻璃透明度"
+              :aria-valuetext="`${Math.round(glassClarity * 100)}%`"
+            />
+            <span class="clarity-level" aria-hidden="true">高</span>
+          </div>
         </div>
 
         <p class="status-text">{{ status }}</p>
