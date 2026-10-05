@@ -4,7 +4,10 @@ use soul_lantern_mc_debug::{Cancellation, Engine, ProcessControl};
 #[ignore = "仅由手动 GitHub Actions 启动真实 Minecraft 服务端"]
 fn official_server_validates_and_cleans_up() {
     let key = std::env::var("MC_DEBUG_VERSION").expect("MC_DEBUG_VERSION");
-    let cache = tempfile::tempdir().unwrap();
+    let cache = tempfile::Builder::new()
+        .prefix("Soul Lantern debug ")
+        .tempdir()
+        .unwrap();
     let control = ProcessControl::default();
     let cancel = Cancellation::default();
     let mut engine = Engine::new(cache.path().to_path_buf(), control.clone());

@@ -315,6 +315,7 @@ pub async fn auth_login(account: String, password: String) -> Result<AuthState, 
 
 #[tauri::command]
 pub async fn auth_logout() -> Result<(), String> {
+    crate::debug::shutdown();
     // remote::logout 内部无论成败都会清本地会话
     let _ = remote::logout().await;
     Ok(())
